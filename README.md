@@ -1,149 +1,205 @@
-# 🩺 LangGraph Agentic Prescription Extractor & Studio (Offline & Multi-Agent)
+# 🩺 LangGraph Agentic Prescription Extractor & Studio
 
-A state-of-the-art, 100% **offline agentic medical prescription extraction system** built with **LangGraph**, **LangChain**, multi-engine **Speech-to-Text** (*Whisper Ayush*, *NVIDIA Canary*, *NVIDIA Parakeet*, *Moonshine*), **FAISS Vector Store**, **SQLite**, and dual parallel frontends (**Streamlit Clinical Dashboard** and **Node.js RxAgent Studio**).
+<div align="center">
 
-The application ingests raw doctor-patient voice recordings or text notes and uses a coordinated network of specialized parallel agents to extract structured clinical prescription blocks into a validated 7-column schema with **zero hallucinations**, **faulty-grammar tolerance**, **conversational noise filtering**, and **no unsolicited commentary**.
+[![Python Version](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg)](https://www.python.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-18%20%7C%2020%20%7C%2024%20LTS-green.svg)](https://nodejs.org/)
+[![Framework](https://img.shields.io/badge/LangGraph-Multi--Agent-orange.svg)](https://github.com/langchain-ai/langgraph)
+[![Frontend](https://img.shields.io/badge/Dual%20UI-Streamlit%20%2B%20Node.js-purple.svg)](#-how-to-run)
+[![License](https://img.shields.io/badge/License-MIT-brightgreen.svg)](#-license)
+
+**A 100% Offline, Privacy-Preserving Clinical AI System for Doctor Voice-to-Rx Transcription, Multi-Agent Field Extraction, and Verified Spreadsheet Export.**
+
+Developed with ❤️ by **Abhinav Gupta** • ✉️ [abhinavgupta15.ag@gmail.com](mailto:abhinavgupta15.ag@gmail.com)
+
+</div>
 
 ---
 
-## 🏗️ Dual-Frontend & Parallel Pipeline Architecture
+## 🌟 Executive Summary
+
+**LangGraph Agentic Prescription Extractor** is a clinical-grade AI intelligence system engineered to eliminate clinical documentation burden. It transforms unpunctuated doctor-patient voice recordings and complex multi-drug text instructions into verified, structured 7-column clinical tables.
+
+Built on an anti-hallucination **LangGraph Multi-Agent Architecture**, the engine executes specialized parallel extractors coordinated by a central supervisor, verified by a strict validator loop, and rendered across **dual parallel user interfaces** (Streamlit Dashboard & Node.js Clinical Studio).
+
+---
+
+## 🏗️ System Architecture & Dual-Frontend Flowsheet
+
+The system operates concurrently across Python and Node.js environments sharing a synchronized SQLite audit database and file export storage:
 
 ```mermaid
 graph TD
-    User["Doctor / Healthcare Practitioner"]
+    Doctor["👨‍⚕️ Doctor / Clinical Practitioner"]
 
-    subgraph Frontends["Dual Parallel Interfaces"]
-        StreamlitApp["Streamlit Dashboard (Port 8501)"]
-        NodeApp["Node.js RxAgent Studio (Port 3000)"]
+    subgraph Frontends["🖥️ Dual Parallel Frontends"]
+        StreamlitUI["📊 Streamlit Clinical Dashboard (Port 8501)"]
+        NodeUI["⚡ Node.js RxAgent Studio (Port 3000)"]
     end
 
-    subgraph CoreEngine["Agentic Core Engine & Gateways"]
-        FastAPIGateway["FastAPI REST Gateway (Port 8080)"]
-        Supervisor["Supervisor Agent (Noise Filter & Fan-out)"]
+    subgraph APILayer["🌐 REST Gateway Layer"]
+        FastAPIServer["🚀 FastAPI Backend Service (Port 8080)"]
+    end
+
+    subgraph AgenticEngine["🧠 LangGraph Multi-Agent Core Engine"]
+        Supervisor["🎯 Supervisor Agent<br/>(Noise Filter, Conversational Guard, Fan-Out)"]
         
-        subgraph ParallelAgents["Specialized Parallel Extractors"]
-            MedAgent["Medicine & Strength Agent"]
-            RouteAgent["Route Specificity Agent"]
-            DurFreqAgent["Duration & Frequency Agent"]
-            InstAgent["Instruction & Precaution Agent"]
+        subgraph ParallelNodes["⚙️ Parallel Specialized Extractors"]
+            MedNode["💊 Medicine & Strength Agent<br/>(Dose Concatenation & Companion Splitting)"]
+            RouteNode["📍 Route Specificity Agent<br/>(Oral, Topical, Inhalation, Ophthalmic, Nasal)"]
+            DurFreqNode["⏱️ Duration & Frequency Agent<br/>(Informal Durations, Interval Schedules, Coreferences)"]
+            InstNode["📋 Instruction & Precaution Agent<br/>(Meal Timings, Devices, Titrations, Generic Advice)"]
         end
         
-        Aggregator["Aggregator Agent (Deduplication & Union)"]
-        Validator["Validator QA Loop (Anti-Hallucination)"]
-        Formatter["Formatter Agent (Strict 7-Column Schema)"]
-        
-        subgraph STTEngines["Multi-Engine Speech-to-Text"]
-            WhisperAyush["Whisper Ayush (Fast Turbo + SDPA)"]
-            Canary["NVIDIA Canary 1B"]
-            Parakeet["NVIDIA Parakeet TDT 1.1B"]
-            Moonshine["Useful Sensors Moonshine Base/Tiny"]
-        end
+        Aggregator["🧩 Aggregator Agent<br/>(Deduplication, Entity Union & Cross-Attribute Binding)"]
+        Validator["🛡️ Validator QA Loop<br/>(Anti-Hallucination & Groundedness Verification)"]
+        Formatter["📄 Formatter Agent<br/>(Strict 7-Column Canonical Prescription Records)"]
     end
 
-    subgraph Persistence["Shared Storage & Audit Trail"]
-        SQLiteDB[(SQLite Database rx_history.db)]
-        Exports["Spreadsheets (.csv / .xlsx)"]
-        AudioDir["Voice Notes data/audio_files/"]
+    subgraph SpeechEngines["🎙️ Multi-Engine Speech-to-Text Suite"]
+        AyushWhisper["⚡ Whisper Ayush (Fine-Tuned Turbo + SDPA)"]
+        Canary["🦅 NVIDIA Canary 1B (Multilingual ASR)"]
+        Parakeet["🦜 NVIDIA Parakeet TDT 1.1B (Streaming ASR)"]
+        Moonshine["🌙 Useful Sensors Moonshine (Edge Base/Tiny)"]
+        StandardWhisper["🔊 OpenAI Whisper (Local Base/Tiny)"]
     end
 
-    User --> StreamlitApp
-    User --> NodeApp
-    StreamlitApp --> Supervisor
-    StreamlitApp --> STTEngines
-    NodeApp --> FastAPIGateway
-    FastAPIGateway --> Supervisor
-    FastAPIGateway --> STTEngines
+    subgraph DataStorage["💾 Shared Persistence & Audit Trail"]
+        SQLiteDB[(🗄️ SQLite Database rx_history.db)]
+        Outputs["📑 Export Spreadsheets (data/outputs/*.csv, *.xlsx)"]
+        AudioVault["🎵 Voice Recordings (data/audio_files/*.wav)"]
+    end
+
+    Doctor -->|Voice / Text| StreamlitUI
+    Doctor -->|Voice / Text| NodeUI
     
-    Supervisor --> ParallelAgents
-    ParallelAgents --> Aggregator
+    StreamlitUI -->|Direct Python In-Process| Supervisor
+    StreamlitUI -->|Direct Inference| SpeechEngines
+    
+    NodeUI -->|HTTP / JSON Proxy| FastAPIServer
+    FastAPIServer -->|Async Worker| Supervisor
+    FastAPIServer -->|Multipart Audio| SpeechEngines
+    
+    Supervisor --> ParallelNodes
+    ParallelNodes --> Aggregator
     Aggregator --> Validator
-    Validator --> Formatter
+    Validator -->|Grounded / Valid| Formatter
+    Validator -.->|Needs Correction (Max 3 Retries)| Supervisor
     
     Formatter --> SQLiteDB
-    Formatter --> Exports
-    STTEngines --> AudioDir
+    Formatter --> Outputs
+    SpeechEngines --> AudioVault
+```
+
+---
+
+## 🔄 LangGraph StateGraph Execution Flow
+
+```mermaid
+flowchart LR
+    Start([Raw Input]) --> Sup[Supervisor Agent]
+    
+    Sup --> Med[Medicine Agent]
+    Sup --> Route[Route Agent]
+    Sup --> DurFreq[Duration/Freq Agent]
+    Sup --> Inst[Instruction Agent]
+    
+    Med --> Agg[Aggregator Agent]
+    Route --> Agg
+    DurFreq --> Agg
+    Inst --> Agg
+    
+    Agg --> Val{Validator QA}
+    
+    Val -- "Feedback / Drift" --> Sup
+    Val -- "100% Grounded" --> Form[Formatter Agent]
+    
+    Form --> End([Structured 7-Column Table])
 ```
 
 ---
 
 ## 📊 Structured 7-Column Clinical Schema
 
-| Column | Description | Real-World Example |
-| :--- | :--- | :--- |
-| **`Drug_name`** | Brand name or generic name + primary dose | `PHEXIN DT 250 mg`, `Paracetamol 650 mg`, `Ofloxacin-Ornidazole` |
-| **`strength`** | Secondary dose value if dual-dosed (or `NONE`) | `20 mg`, `NONE` |
-| **`frequency`** | Schedule notation, clinical timing, or interval | `twice daily(1-0-1)`, `every 6 hours`, `TID`, `once daily` |
-| **`duration`** | Duration span (supports `till 7 days`, `upto`, `approx`) | `10 days`, `7 days`, `2 weeks`, `30 days` |
-| **`route`** | Anatomical route of administration | `oral`, `inhalation`, `topical`, `nasal`, `ophthalmic`, `otic` |
-| **`instruction`** | Primary administration timing, meal rules, devices, PRN | `1. before breakfast`, `1. using Revolizer device 2. rinse mouth after use` |
-| **`additional_instruction`** | Secondary clinical monitoring, follow-up, warnings, diet/lifestyle | `1. Seek reassessment if eye swelling develops 2. strict maximum of 3 days` |
+| # | Column Name | Description | Clinical Example |
+| :- | :--- | :--- | :--- |
+| **1** | **`Drug_name`** | Brand name or generic compound with primary dose | `PHEXIN DT 250 mg`, `Paracetamol 650 mg`, `Budesonide 200 mcg` |
+| **2** | **`strength`** | Secondary dose strength if multi-ingredient compound (or `NONE`) | `37.5 MG`, `10 mg`, `NONE` |
+| **3** | **`frequency`** | Dosage frequency notation, clinical interval, or timing schedule | `twice daily(1-0-1)`, `every 6 hours`, `TID`, `once daily at bedtime` |
+| **4** | **`duration`** | Duration span (supports `till 7 days`, `upto 5 days`, `for 2 weeks`) | `7 days`, `10 days`, `2 weeks`, `30 days` |
+| **5** | **`route`** | Verified anatomical route of administration | `oral`, `inhalation`, `topical`, `nasal`, `ophthalmic`, `otic` |
+| **6** | **`instruction`** | Primary administration instructions (meal rules, devices, PRN) | `1. before breakfast`, `1. using Revolizer 2. rinse mouth after use` |
+| **7** | **`additional_instruction`** | Secondary clinical guidance (follow-up, warnings, titrations, lifestyle) | `1. Seek reassessment if eye swelling develops 2. strict max of 3 days` |
 
 ---
 
-## 🚀 Key Features & Upgrades
+## ✨ Key Capabilities & Highlights
 
-1. **Dual Parallel Frontends**:
-   - **Node.js RxAgent Studio (`http://localhost:3000`)**: Modern clinical glassmorphism UI with real-time HTML5 Web Audio waveform visualization, live STT/LLM toggling, inline editable 7-column table, 1-click CSV/JSON exports, and history audit trail.
-   - **Streamlit Dashboard (`http://localhost:8501`)**: Rich analytical tabs, multi-process management, and SQLite database explorer.
-2. **Multi-Model Speech-to-Text Suite**:
-   - **Whisper Ayush (Fine-Tuned Turbo Rx v1)**: Optimized with PyTorch Scaled Dot-Product Attention (SDPA), CPU multi-threading, and greedy KV-cached decoding for **3–4x lower latency**.
-   - **NVIDIA Canary 1B & Parakeet TDT 1.1B**: High-accuracy multilingual and streaming ASR.
-   - **Useful Sensors Moonshine (Base & Tiny)**: Edge/mobile optimized speech recognition.
-3. **Cross-Sentence Coreference & Plural Scheduling**:
-   - Accurately resolves pronouns and shared references (e.g. *"Both should be taken twice daily after meals"* propagates frequency to all active drugs while guarding anatomical references like *"both eyes"*).
-4. **Faulty-Grammar Duration & Titration Parsing**:
-   - Robust parsing for informal duration prepositions (`till 7 days`, `upto 5 days`, `for next 2 weeks`) and compound condition-action titrations (`if fever does not go away, increase dosage by 20 mg`).
-5. **Conversational Noise-Proofing & Relevance Reasoning**:
-   - Strips conversational banter, greetings, patient complaints, and vital signs before table generation.
-6. **Quality Assurance Validator Loop**:
-   - Anti-hallucination auditor verifies 100% groundedness against raw input text and loops targeted feedback up to a strict cap of 3 iterations.
-7. **100% Offline & Private**:
-   - Zero external API dependencies or cloud leakage.
+- 🎙️ **Multi-Model Speech-to-Text Suite**:
+  - **Whisper Ayush (Fine-Tuned Turbo Rx v1)**: Accelerated via PyTorch Scaled Dot-Product Attention (SDPA), multi-threaded CPU parallelization, and greedy KV-cached decoding (**3–4x lower latency**).
+  - Dynamic toggling across **NVIDIA Canary 1B**, **NVIDIA Parakeet TDT 1.1B**, and **Useful Sensors Moonshine (Base/Tiny)**.
+- ⚡ **Dual Parallel Frontends**:
+  - **Node.js RxAgent Studio (`http://localhost:3000`)**: Glassmorphism UI, HTML5 Web Audio live waveform visualizer, inline editable 7-column table, 1-click CSV/JSON export, and real-time history audit sync.
+  - **Streamlit Clinical Dashboard (`http://localhost:8501`)**: Full multi-tab analytical interface, vector store prompt inspection, and SQLite process manager.
+- 🧠 **Cross-Sentence Coreference & Plural Broadcaster**:
+  - Resolves pronouns and shared references (*"Both should be taken twice daily after meals"* propagates frequency to all active drugs while safeguarding anatomical references like *"both eyes"*).
+- 🛡️ **Anti-Hallucination & Doctor-Grounded**:
+  - Strict validator loop guarantees zero unsolicited advice, zero moralizing, and zero speculative commentary.
+- 🧹 **Conversational Chatter & Noise-Proofing**:
+  - Automatically isolates clinical prescriptions from conversational chatter (*"Good morning doctor"*, *"I have fever since yesterday"*, *"BP is 130/80 mmHg"*).
+- 💾 **100% Offline & Private**:
+  - Zero external API dependencies, cloud transmission, or third-party data leakage.
 
 ---
 
-## 🛠️ How to Run
+## 🚀 How to Run
 
 ### 1. Prerequisites
-- **Python 3.10+** (Tested on Python 3.10 – 3.13)
+- **Python 3.10+** (Tested on Python 3.10, 3.11, 3.12, 3.13)
 - **Node.js 18+** (LTS recommended)
 - **Git**
 
-### 2. Setup Virtual Environment
+### 2. Installation
 ```powershell
-# Clone and enter repo
+# Clone the repository
 git clone https://github.com/AbhinavEliac/Agentic_Prescription_Generator.git
 cd Agentic_Prescription_Generator
 
-# Setup Python dependencies
+# Setup Python virtual environment
 python -m venv env
 .\env\Scripts\Activate.ps1
+
+# Install Python requirements
 pip install -r requirements.txt
 ```
 
-### 3. Option A: Run the Node.js Web Application
+---
+
+### 3. Running the Applications
+
+#### 🌐 Option A: Run the Modern Node.js Web Application
 ```powershell
 # Terminal 1: Start the Python Agentic API Gateway (Port 8080)
 python -m uvicorn api_server:app --app-dir rx_extractor_app --host 127.0.0.1 --port 8080
 
-# Terminal 2: Start the Node.js Web App (Port 3000)
+# Terminal 2: Start the Node.js Studio App (Port 3000)
 cd rx_node_app
 npm install
 node server.js
 ```
-👉 Open browser to: **`http://localhost:3000`**
+👉 Open browser: **[http://localhost:3000](http://localhost:3000)**
 
-### 4. Option B: Run the Streamlit Dashboard
+#### 📊 Option B: Run the Streamlit Dashboard
 ```powershell
 streamlit run rx_extractor_app/app.py
 ```
-👉 Open browser to: **`http://localhost:8501`**
+👉 Open browser: **[http://localhost:8501](http://localhost:8501)**
 
 ---
 
-## 🧪 Automated Verification Suite
+## 🧪 Automated Verification Suite (19/19 Passing)
 
-Run the comprehensive 19-test regression suite covering companion drugs, inhalation routes, topicals, ophthalmic drops, otic drops, interval schedules, speaker headers, cross-sentence coreferences, continuous unpunctuated speech, decimal dosages, faulty grammar durations, and conversational noise filtering:
+Run the comprehensive end-to-end regression test suite covering all multi-drug, coreference, dosage titration, topical, inhalation, and continuous speech edge cases:
 
 ```powershell
 python rx_extractor_app/test_langgraph_pipeline.py
@@ -154,3 +210,18 @@ python rx_extractor_app/test_langgraph_pipeline.py
 ALL 19 LANGGRAPH DRIFT-PROOF MULTI-AGENT TESTS PASSED!
 ========================================================
 ```
+
+---
+
+## 👨‍💻 Author & Contact
+
+**Abhinav Gupta**  
+- ✉️ Email: [abhinavgupta15.ag@gmail.com](mailto:abhinavgupta15.ag@gmail.com)  
+- 🐙 GitHub: [@AbhinavEliac](https://github.com/AbhinavEliac)  
+- 📂 Repository: [Agentic_Prescription_Generator](https://github.com/AbhinavEliac/Agentic_Prescription_Generator)
+
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License**.
