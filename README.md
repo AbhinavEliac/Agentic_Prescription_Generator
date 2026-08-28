@@ -88,39 +88,102 @@ graph LR
 
 ---
 
-## 🚀 Quick Start Guide
+## 🚀 Detailed Setup & Execution Guide
 
-### 1. Setup Environment
+### 1. Prerequisites
+Ensure you have the following installed on your machine:
+- **Python**: `3.10` or higher (`3.10`, `3.11`, `3.12`, `3.13` supported)
+- **Node.js**: `18.x` or higher (LTS `v20.x` / `v24.x` recommended)
+- **Git**: For cloning and branch management
+
+---
+
+### 2. Installation & Environment Setup
+
+Open PowerShell or your terminal:
+
 ```powershell
+# 1. Clone the repository
 git clone https://github.com/AbhinavEliac/Agentic_Prescription_Generator.git
 cd Agentic_Prescription_Generator
 
+# 2. Create and activate a Python virtual environment
 python -m venv env
 .\env\Scripts\Activate.ps1
+
+# 3. Upgrade pip and install all required Python dependencies
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
 ---
 
-### 2. Run Options
+### 3. Running the Applications
 
-#### Option A: Node.js Web App
+You can run either the **Modern Node.js Studio App** or the **Streamlit Clinical Dashboard** (or run both concurrently).
+
+#### 🌐 Mode A: Modern Node.js Clinical Studio (Port 3000)
+
+The Node.js setup requires two services running in parallel:
+1. The **FastAPI Agentic REST Gateway** (Port `8080`)
+2. The **Node.js Express Web App** (Port `3000`)
+
+**Terminal 1: Start the Python API Gateway**
 ```powershell
-# Terminal 1: Start Python API Gateway (Port 8080)
+# Inside project root with virtual environment activated:
 python -m uvicorn api_server:app --app-dir rx_extractor_app --host 127.0.0.1 --port 8080
-
-# Terminal 2: Start Node.js Studio (Port 3000)
-cd rx_node_app
-npm install
-node server.js
 ```
-👉 Open **[http://localhost:3000](http://localhost:3000)**
+> *This initializes the LangGraph Multi-Agent pipeline and exposes `/api/extract`, `/api/transcribe`, and `/api/history`.*
 
-#### Option B: Streamlit Dashboard
+**Terminal 2: Start the Node.js Web Application**
 ```powershell
+# In a new terminal window:
+cd C:\Users\ADMIN\Downloads\rx_extractor_app_agentic\rx_node_app
+
+# Install npm dependencies (only required on first run):
+npm install
+
+# Start the Node.js server:
+node server.js
+# (or: npm start)
+```
+
+👉 Open your browser to: **[http://localhost:3000](http://localhost:3000)**
+
+---
+
+#### 📊 Mode B: Streamlit Clinical Dashboard (Port 8501)
+
+If you prefer the native Streamlit analytical dashboard:
+
+```powershell
+# From project root with virtual environment activated:
 streamlit run rx_extractor_app/app.py
 ```
-👉 Open **[http://localhost:8501](http://localhost:8501)**
+
+👉 Open your browser to: **[http://localhost:8501](http://localhost:8501)**
+
+---
+
+### 📋 Port Mapping Summary
+
+| Service | Port | Local URL | Primary Role |
+| :--- | :--- | :--- | :--- |
+| **Node.js Studio UI** | `3000` | `http://localhost:3000` | Glassmorphic clinical UI, live waveform voice recording, inline table editing, CSV/JSON exports. |
+| **FastAPI REST Gateway** | `8080` | `http://127.0.0.1:8080` | High-speed REST backend serving LangGraph extraction and STT audio transcription. |
+| **Streamlit Dashboard** | `8501` | `http://localhost:8501` | Multi-tab clinical portal with process manager, vectorstore inspector, and SQLite database explorer. |
+
+---
+
+### 💡 Common Troubleshooting Tips
+
+1. **`node: The term 'node' is not recognized`**:
+   - If you just installed Node.js, your current terminal session hasn't refreshed its environment variables. Run `& "C:\Program Files\nodejs\node.exe" server.js` or close and reopen PowerShell.
+2. **`[WinError 10048] Address already in use (Port 8080 / 3000)`**:
+   - A background server is already running on that port. Either access the existing app directly in your browser or kill lingering processes using:
+     ```powershell
+     Get-NetTCPConnection -LocalPort 8080, 3000 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+     ```
 
 ---
 
