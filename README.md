@@ -2,7 +2,7 @@
 
 A state-of-the-art, 100% **offline agentic medical prescription extraction system** built with **LangGraph**, **LangChain**, local **Whisper** speech-to-text, **FAISS Vector Store**, **SQLite**, and local **LLMs** (Llama 3 8B, Qwen 1.5B, Qwen3 0.6B, DeepSeek-R1 Distill).
 
-The application ingests raw doctor-patient voice recordings or text notes and uses a coordinated network of specialized parallel agents to extract structured clinical prescription blocks into a validated 7-column schema with **zero hallucinations** and **no unsolicited commentary**.
+The application ingests raw doctor-patient voice recordings or text notes and uses a coordinated network of specialized parallel agents to extract structured clinical prescription blocks into a validated 7-column schema with **zero hallucinations**, **conversational noise filtering**, and **no unsolicited commentary**.
 
 ---
 
@@ -17,8 +17,8 @@ The application ingests raw doctor-patient voice recordings or text notes and us
                                                  ▼
                                     ┌────────────────────────┐
                                     │    Supervisor Agent    │
-                                    │ (Initializes State &   │
-                                    │  Coordinates Fan-Out)  │
+                                    │ (Noise Filtering, STT  │
+                                    │  Cleaning & Fan-Out)   │
                                     └────────────┬───────────┘
                                                  │
                    ┌─────────────────────────────┼─────────────────────────────┐
@@ -43,8 +43,8 @@ The application ingests raw doctor-patient voice recordings or text notes and us
                                                  ▼
                                     ┌────────────────────────┐
                                     │    Aggregator Agent    │
-                                    │  (Merges Parallel Node │
-                                    │   Outputs into Records)│
+                                    │ (Unifies Records and   │
+                                    │  Filters Non-Drug Data)│
                                     └────────────┬───────────┘
                                                  │
                                                  ▼
@@ -90,19 +90,21 @@ The application ingests raw doctor-patient voice recordings or text notes and us
 ## 🚀 Key Features
 
 1. **Doctor-First Precision**:
-   - Strictly grounded in the doctor's spoken/written words. No unsolicited advice, no moralizing, no disclaimers.
-2. **Parallel Agent Extraction**:
+   - Strictly grounded in the doctor's spoken/written words. Zero unsolicited advice, zero moralizing, zero disclaimers.
+2. **Conversational Noise-Proofing & Relevance Reasoning**:
+   - Strips conversational banter, greetings (`"Good morning doctor"`), patient symptoms (`"I have fever since yesterday"`), vital signs (`"BP is 130/80 mmHg"`), and non-drug terms (`"endoscopy report"`, `"ice packs"`, `"pregnant individuals"`) before table generation.
+3. **Parallel Agent Extraction**:
    - Independent extraction nodes concurrently process drug names, strengths, anatomical routes, dosage schedules, and primary vs. secondary instructions.
-3. **Dual Instruction Separation**:
+4. **Dual Instruction Separation & Generic Advice Placement**:
    - `instruction`: Primary preparation, meal timing, ingestion methods, device care.
-   - `additional_instruction`: Clinical follow-up visits, reassessment conditions, adverse effect cautions, dose titrations, and dietary/lifestyle guidance.
-4. **Drift-Proof Natural Language Clause Decomposition**:
-   - Automatically handles non-standard times of day (`Morning Night`), cross-sentence instructions, and standalone clinical sentences without brittle hardcoding.
-5. **Quality Assurance Validator Loop**:
+   - `additional_instruction`: Clinical follow-up visits, reassessment conditions, adverse effect cautions, dose titrations, and dietary/lifestyle guidance. Generic advice is cleanly assigned to the final medicine record.
+5. **Drift-Proof Natural Language & Punctuation-Free Speech**:
+   - Handles continuous unpunctuated voice speech, non-standard times of day (`Morning Night`), cross-sentence instructions, and phonetic transcriptions (`Overly` -> `oral`).
+6. **Quality Assurance Validator Loop**:
    - Anti-hallucination auditor verifies 100% groundedness against raw input text and loops targeted feedback up to a strict cap of 3 iterations.
-6. **Multi-Format Export & Thread History**:
+7. **Multi-Format Export & Thread History**:
    - Complete per-process SQLite persistence with live downloads for **CSV** and **Excel (.xlsx)** spreadsheets.
-7. **100% Offline & Private**:
+8. **100% Offline & Private**:
    - Zero external API dependencies or cloud leakage. Local Whisper speech transcription + local LLM backends.
 
 ---
@@ -116,8 +118,8 @@ The application ingests raw doctor-patient voice recordings or text notes and us
 ### 2. Clone Repository & Setup Environment
 ```powershell
 # Clone the repository
-git clone <repo-url>
-cd rx_extractor_app_agentic
+git clone https://github.com/AbhinavEliac/Agentic_Prescription_Generator.git
+cd Agentic_Prescription_Generator
 
 # Create and activate virtual environment
 python -m venv env
@@ -136,7 +138,7 @@ streamlit run rx_extractor_app/app.py
 
 ## 🧪 Automated Verification Suite
 
-Run the comprehensive test suite covering companion drugs, inhalation routes, topicals, ophthalmic drops, otic drops, interval schedules, speaker headers, and cross-sentence linkages:
+Run the comprehensive 14-test regression suite covering companion drugs, inhalation routes, topicals, ophthalmic drops, otic drops, interval schedules, speaker headers, cross-sentence linkages, continuous unpunctuated speech, decimal dosages, and conversational noise filtering:
 
 ```powershell
 python rx_extractor_app/test_langgraph_pipeline.py
@@ -144,7 +146,7 @@ python rx_extractor_app/test_langgraph_pipeline.py
 
 ```text
 ========================================================
-ALL 11 LANGGRAPH DRIFT-PROOF MULTI-AGENT TESTS PASSED!
+ALL 14 LANGGRAPH DRIFT-PROOF MULTI-AGENT TESTS PASSED!
 ========================================================
 ```
 
@@ -167,16 +169,16 @@ rx_extractor_app_agentic/
     ├── prompt.py                   # Multi-agent specialized clinical prompts
     ├── transcriber.py              # Offline Whisper voice transcription
     ├── vectorstore.py              # FAISS prompt retrieval store
-    ├── test_langgraph_pipeline.py  # 11-test automated verification suite
+    ├── test_langgraph_pipeline.py  # 14-test automated verification suite
     └── agents/                     # Modular Multi-Agent Node Implementations
         ├── __init__.py             # Agent node exports
-        ├── supervisor_agent.py     # Supervisor coordinating agent
+        ├── supervisor_agent.py     # Supervisor coordinating & noise filtering agent
         ├── medicine_strength_agent.py # Medicine & strength extractor
         ├── route_agent.py          # Anatomical route extractor
         ├── duration_frequency_agent.py # Schedule & duration extractor
         ├── instruction_agent.py    # Primary & additional instruction agent
-        ├── aggregator_agent.py     # Parallel state aggregator
-        ├── validator_agent.py      # Quality assurance validator
+        ├── aggregator_agent.py     # Parallel state aggregator & entity validator
+        ├── validator_agent.py      # Quality assurance validator & groundedness auditor
         ├── formatter_agent.py      # Structured block formatter
-        └── utils.py                # Clause segmenter & clinical regex helpers
+        └── utils.py                # Clause segmenter, noise filters & clinical helpers
 ```

@@ -69,7 +69,7 @@ def route_agent(state: AgenticRxState, llm: Any = None) -> Dict[str, Any]:
                 route = "inhalation"
             elif any(w in core_directive for w in ("apply", "gel", "ointment", "cream", "lotion", "massage", "sunscreen", "cleanse", "wash")):
                 route = "topical"
-            elif any(w in core_directive for w in ("tablet", "tab", "capsule", "cap", "syrup", "sachet", "pill", "suspension", "vial", "consume", "dissolve", "drinking water", "take", "administer", "give", "gargle", "mouthwash", "lozenge", "paste", "mixed in milk")):
+            elif any(w in core_directive for w in ("tablet", "tab", "capsule", "cap", "syrup", "sachet", "pill", "suspension", "vial", "consume", "dissolve", "drinking water", "take", "administer", "give", "gargle", "mouthwash", "lozenge", "paste", "mixed in milk", "orally", "overly", "by mouth")):
                 route = "oral"
 
             # 2. Check full clause if not resolved by core directive

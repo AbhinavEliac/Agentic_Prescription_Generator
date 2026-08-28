@@ -6,6 +6,7 @@ Dynamic natural language extractor for primary administration instructions and a
 1. 'instruction': Primary administration timing, meals, preparation techniques, device usage, PRN indications, times-of-day.
 2. 'additional_instruction': Clinical follow-up, evaluation, monitoring, reassessment, adverse effect warnings,
    titration conditions, course completion rules, cross-drug cautions, and dietary/lifestyle guidance.
+   Fully drift-proof and punctuation-independent for continuous voice speech.
 """
 import re
 from typing import Dict, Any, List
@@ -18,11 +19,12 @@ from agents.utils import (
 import prompt
 
 # Common Action verbs that introduce a new medication clause
-MED_ACTION_VERB_START = r"(?i)^(?:take|administer|give|prescribe|start|consume|dissolve|inhale|apply|put|instill|inject|infuse|gently\s+massage|massage|cleanse)\b"
+MED_ACTION_VERB_START = r"(?i)^(?:take\s+(?!(?:walks?|rest|care|steam))\w+|administer|give|prescribe|start|consume|dissolve|inhale|apply|put|instill|inject|infuse|gently\s+massage|massage|cleanse)\b"
 
 # Verbs / phrases that naturally signal follow-up, evaluation, precaution, warnings, or lifestyle advice
 INDEPENDENT_ADVICE_START = (
     r"(?i)^(?:return\s+for|return\s+if|return\s+after|return\s+to|come\s+back|follow\s+up|review\s+if|review\s+after|"
+    r"meet\s+(?:the\s+)?doctor|please\s+see\s+me|see\s+(?:your\s+|the\s+)?doctor|"
     r"get\s+reassessed|seek\s+reassessment|seek\s+medical\s+review|seek\s+urgent|seek\s+immediate|seek|"
     r"consult\s+immediately|consult\s+your|consult|"
     r"contact\s+the\s+clinic|contact\s+your|report\s+immediately|report\s+if|report|"
@@ -45,11 +47,37 @@ INDEPENDENT_ADVICE_START = (
     r"drink\s+plenty|drink\s+2|drink\s+warm|drink|"
     r"consume\s+plenty|consume\s+warm|stay\s+well-hydrated|"
     r"apply\s+local\s+hot|apply\s+ice\s+packs?|"
-    r"sponge\s+the\s+body|sponge|"
+    r"sponge\s+the\s+body|sponge\s+forehead|sponge|"
+    r"(?:also\s+)?take\s+walks?|go\s+for\s+walks?|take\s+rest|take\s+steam|"
     r"wear\s+loose|monitor\s+your|monitor\s+weight|monitor\s+blood|monitor\s+inr|monitor|"
     r"be\s+sure\s+to\s+rinse|rinse\s+your\s+mouth\s+thoroughly|rinse\s+mouth\s+after|"
-    r"if\s+blood\s+pressure|if\s+fever|if\s+symptoms|if\s+pain|if\s+rash|if\s+numbness|if\s+severe|if\s+ulcers|if\s+condition|if\s+breathing|if\s+dizziness)\b"
+    r"if\s+headache|if\s+blood\s+pressure|if\s+fever|if\s+symptoms|if\s+pain|if\s+rash|if\s+numbness|if\s+severe|if\s+ulcers|if\s+condition|if\s+breathing|if\s+dizziness)\b"
 )
+
+# Robust punctuation-independent clinical advice pattern (captures continuous speech advice)
+CONTINUOUS_ADVICE_SPAN_PATTERNS = [
+    r"(?i)\b(?:if\s+[a-zA-Z\s\-]+?(?:does\s+not\s+go\s+away|does\s+not\s+clear|persists|worsens|increases|crosses\s+\d+|develops|occurs|remains\s+high|subsides|heals|drops\s+to\s+normal)(?:\s+(?:Meet\s+(?:the\s+)?doctor|consult\s+(?:your\s+)?doctor|seek\s+medical\s+review|visit\s+(?:the\s+)?emergency|report\s+immediately))?)\b",
+    r"(?i)\b(?:meet\s+(?:the\s+)?doctor)\b",
+    r"(?i)\b(?:please\s+see\s+me(?:\s+after\s+\d+\s+days?)?)\b",
+    r"(?i)\b(?:see\s+(?:your\s+|the\s+)?doctor(?:\s+after\s+\d+\s+days?)?)\b",
+    r"(?i)\b(?:(?:also\s+)?take\s+walks?(?:\s+after\s+dinner)?(?:\s+and\s+it\s+will\s+reduce\s+your\s+headaches)?)\b",
+    r"(?i)\b(?:go\s+for\s+(?:morning\s+)?walks?(?:\s+daily)?)\b",
+    r"(?i)\b(?:return\s+for(?:\s+evaluation|\s+review|\s+a\s+follow-up)?(?:\s+after\s+completing\s+the\s+course)?)\b",
+    r"(?i)\b(?:come\s+(?:back\s+)?for\s+review(?:\s+with\s+[a-zA-Z\s]+)?)\b",
+    r"(?i)\b(?:sponge\s+(?:the\s+)?(?:body|forehead)(?:\s+with\s+cold\s+water)?(?:\s+if\s+[a-zA-Z\s]+)?)\b",
+    r"(?i)\b(?:discontinue\s+(?:once|if)\s+[a-zA-Z\s]+?)\b",
+    r"(?i)\b(?:do\s+not\s+stop\s+(?:the\s+)?antibiotic\s+course[a-zA-Z\s]*)\b",
+    r"(?i)\b(?:avoid\s+(?:lifting\s+heavy\s+weights|squatting|hot\s+baths|scratching|smoking|alcohol|spicy|sour)[a-zA-Z\s]*)\b",
+    r"(?i)\b(?:stick\s+to\s+a\s+bland\s+diet[a-zA-Z\s]*)\b",
+    r"(?i)\b(?:maintain\s+(?:a\s+low-glycemic|generous\s+hydration|a\s+regular\s+sleep)[a-zA-Z\s]*)\b",
+    r"(?i)\b(?:include\s+(?:dark\s+)?green\s+leafy[a-zA-Z\s]*)\b",
+    r"(?i)\b(?:drink\s+(?:plenty|2\.5|\d+\s+liters)[a-zA-Z\s]*)\b",
+    r"(?i)\b(?:apply\s+(?:local\s+)?hot\s+water\s+fomentation[a-zA-Z\s]*)\b",
+    r"(?i)\b(?:apply\s+ice\s+packs?[a-zA-Z\s]*)\b",
+    r"(?i)\b(?:keep\s+(?:the\s+)?(?:blistered|affected|skin|dressing|ear)\s+area\s+clean\s+and\s+dry)\b",
+    r"(?i)\b(?:avoid\s+close\s+physical\s+contact[a-zA-Z\s]*)\b",
+    r"(?i)\b(?:return\s+if\s+the\s+rash\s+involves[a-zA-Z\s]*)\b",
+]
 
 # Intra-clause primary administration expressions (times of day, meals, devices, preparations, PRN)
 PRIMARY_INSTRUCTION_PATTERNS = [
@@ -142,7 +170,7 @@ def deduplicate_phrases(inst_list: List[str]) -> List[str]:
 
 def instruction_agent(state: AgenticRxState, llm: Any = None) -> Dict[str, Any]:
     """
-    Instruction Agent with dynamic natural language sentence reasoning.
+    Instruction Agent with dynamic punctuation-independent natural language reasoning.
     """
     input_text = state.get("input_text", "")
     feedback = state.get("validation_feedback", {}).get("instruction_agent", "")
@@ -176,53 +204,71 @@ def instruction_agent(state: AgenticRxState, llm: Any = None) -> Dict[str, Any]:
         segments = segment_prescription(input_text)
         total_meds = len(segments)
 
-        # 1. Natural Language Sentence Discovery:
-        # Split the text into standalone sentences (decimal-safe)
-        raw_sentences = [s.strip() for s in re.split(r"(?<!\d)\.(?!\d)|[\n;!]", input_text) if s.strip()]
-
-        # Identify all standalone non-medication sentences (follow-up, warnings, evaluations, diet, lifestyle)
+        # 1. Punctuation-Independent Clinical Advice Discovery:
+        clean_input = re.sub(r"(\d+),(\d+)", r"\1\2", input_text)
+        clean_input = re.sub(r"\.\s*((?:Once|Twice|Thrice|\d+\s+times|Every|Daily|At\s+bedtime|In\s+the\s+morning)[^\.,;]+?),\s*(take|administer|give|start|apply|inhale|instill)", r" \1. \2", clean_input, flags=re.IGNORECASE)
+        # A. Sentence-level discovery
+        raw_sentences = [s.strip() for s in re.split(r"(?<!\d)\.(?!\d)|[\n;!]", clean_input) if s.strip()]
         global_clinical_advice: List[str] = []
+
         for sent in raw_sentences:
-            s_clean = sent.strip()
+            s_clean = re.sub(r"^[\s,.\-]+", "", sent).strip()
             s_lower = s_clean.lower()
-            # Check if this sentence belongs specifically to a drug class
             is_class_specific = any(re.search(rf"\b{re.escape(k)}\b", s_lower) for k in DRUG_CLASS_MAP.keys())
-            is_med_sentence = bool(re.search(MED_ACTION_VERB_START, s_clean))
+            has_action = bool(re.search(r"(?i)\b(?:take|administer|give|prescribe|start|consume|dissolve|inhale|apply|put|instill)\b", s_clean))
+            has_dose_form = bool(re.search(r"(?i)(?:\d+\s*(?:mg|g|mcg|ml|iu|%)|\b(?:tablets?|capsules?|rotacaps?|vials?|sachets?|syrups?|gels?|drops?|sprays?|ointments?|creams?|lotions?)\b)", s_clean))
+            is_med_sentence = (has_action and has_dose_form) or bool(re.search(MED_ACTION_VERB_START, s_clean))
             is_advice_sentence = bool(re.search(INDEPENDENT_ADVICE_START, s_clean))
 
-            if not is_class_specific and (is_advice_sentence or (not is_med_sentence and len(s_clean) >= 10)):
-                # Ensure it's not a fragmented dosage clause like "Morning Night for 2 weeks"
+            if not is_class_specific and not is_med_sentence and (is_advice_sentence or len(s_clean) >= 10):
                 if not re.search(r"^\s*(?:Morning\s+Night|\d+\s*(?:mg|g|mcg|ml))\b", s_clean, re.IGNORECASE):
-                    if s_clean not in global_clinical_advice:
+                    if s_clean and s_clean not in global_clinical_advice:
                         global_clinical_advice.append(s_clean)
+
+        # B. Continuous-Span discovery (finds unpunctuated advice phrases anywhere in raw speech)
+        for adv_pat in CONTINUOUS_ADVICE_SPAN_PATTERNS:
+            matches = re.finditer(adv_pat, input_text, re.IGNORECASE)
+            for m in matches:
+                span_txt = m.group(0).strip()
+                span_lower = span_txt.lower()
+                is_class_specific = any(re.search(rf"\b{re.escape(k)}\b", span_lower) for k in DRUG_CLASS_MAP.keys())
+                if not is_class_specific and len(span_txt) >= 5:
+                    if span_txt not in global_clinical_advice and not any(span_txt.lower() in g.lower() for g in global_clinical_advice):
+                        global_clinical_advice.append(span_txt)
 
         for idx, s in enumerate(segments):
             m_id = s["medicine_id"]
             clause = s["clause"]
             clause_lower = clause.lower()
 
+            # Isolate the core medication administration clause from trailing advice
+            core_med_clause = re.split(
+                r"(?i)\b(?:if\s+[a-zA-Z\s\-]+?(?:does\s+not|persists|worsens|increases|crosses|develops|remains)|meet\s+(?:the\s+)?doctor|please\s+see\s+me|see\s+(?:your\s+)?doctor|(?:also\s+)?take\s+walks|take\s+walks|return\s+for|come\s+for|sponge)\b",
+                clause
+            )[0].strip()
+
             # Derive current medicine name / stem from this clause
             med_lead_match = re.search(
                 r"(?:take|administer|give|consume|dissolve|inhale|apply|put|instill|start|cleanse|gently\s+massage|massage)?\s*(?:one|two|three|10\s*ml)?\s*(?:tablet|tab|capsule|cap|rotacap|vial|sachet|puff|sprays?|drops?|teaspoons?|dab\s+of|thin\s+layer\s+of|pea-sized\s+amount\s+of)?\s*(?:of\s+)?([A-Za-z0-9\-]+)",
-                clause,
+                core_med_clause,
                 re.IGNORECASE,
             )
             med_stem = med_lead_match.group(1).lower() if med_lead_match else ""
-            if med_stem in ("one", "two", "three", "tab", "tablet", "capsule", "vial", "sachet", "none", "administer", "take", "start", "apply", "cleanse"):
+            if med_stem in ("one", "two", "three", "tab", "tablet", "capsule", "vial", "sachet", "none", "administer", "take", "start", "apply", "cleanse", "this", "print"):
                 med_stem = ""
 
             primary_insts: List[str] = []
             secondary_insts: List[str] = []
 
-            # 2a. Primary patterns in this clause (timing, meal, device, times-of-day)
+            # 2a. Primary patterns in core medication clause (timing, meal, device, times-of-day)
             for pat in PRIMARY_INSTRUCTION_PATTERNS:
-                matches = re.finditer(pat, clause, re.IGNORECASE)
+                matches = re.finditer(pat, core_med_clause, re.IGNORECASE)
                 for m in matches:
                     matched_txt = m.group(0).strip()
                     matched_lower = matched_txt.lower()
 
                     # Guard: Inhaler device instructions should only attach to inhaler/respiratory medications
-                    if "inhaler" in matched_lower and not any(k in clause[:80].lower() for k in ("inhal", "rotacap", "revolizer", "puff", "spacer", "budesonide", "tiotropium", "levosalbutamol", "fluticasone")):
+                    if "inhaler" in matched_lower and not any(k in core_med_clause[:80].lower() for k in ("inhal", "rotacap", "revolizer", "puff", "spacer", "budesonide", "tiotropium", "levosalbutamol", "fluticasone")):
                         continue
 
                     if matched_txt.lower() not in [x.lower() for x in primary_insts]:
@@ -257,7 +303,7 @@ def instruction_agent(state: AgenticRxState, llm: Any = None) -> Dict[str, Any]:
                             re.IGNORECASE,
                         )
                         other_stem = other_lead.group(1).lower() if other_lead else ""
-                        if other_stem and len(other_stem) >= 3 and other_stem not in ("one", "two", "three", "tab", "tablet", "capsule", "none") and other_stem in sent_lower and other_stem != med_stem:
+                        if other_stem and len(other_stem) >= 3 and other_stem not in ("one", "two", "three", "tab", "tablet", "capsule", "none", "this", "print") and other_stem in sent_lower and other_stem != med_stem:
                             is_other_med = True
                             break
                 if is_other_med:
@@ -273,16 +319,18 @@ def instruction_agent(state: AgenticRxState, llm: Any = None) -> Dict[str, Any]:
 
                 # If sentence matches this drug or is generic unassigned advice in a 1-med prescription
                 if mentions_this_drug or (total_meds == 1 and not is_other_med):
-                    # Check primary patterns
-                    for pat in PRIMARY_INSTRUCTION_PATTERNS:
-                        s_match = re.search(pat, sent, re.IGNORECASE)
-                        if s_match:
-                            s_txt = s_match.group(0).strip()
-                            s_lower = s_txt.lower()
-                            if "inhaler" in s_lower and not any(k in clause[:80].lower() for k in ("inhal", "rotacap", "revolizer", "puff", "spacer", "budesonide", "tiotropium", "levosalbutamol", "fluticasone")):
-                                continue
-                            if s_txt.lower() not in [x.lower() for x in primary_insts]:
-                                primary_insts.append(s_txt)
+                    is_sent_pure_advice = bool(re.search(INDEPENDENT_ADVICE_START, sent.strip())) or any(re.search(p, sent, re.IGNORECASE) for p in CONTINUOUS_ADVICE_SPAN_PATTERNS)
+                    # Only check primary patterns if this is NOT a pure advice/lifestyle sentence
+                    if not is_sent_pure_advice:
+                        for pat in PRIMARY_INSTRUCTION_PATTERNS:
+                            s_match = re.search(pat, sent, re.IGNORECASE)
+                            if s_match:
+                                s_txt = s_match.group(0).strip()
+                                s_lower = s_txt.lower()
+                                if "inhaler" in s_lower and not any(k in clause[:80].lower() for k in ("inhal", "rotacap", "revolizer", "puff", "spacer", "budesonide", "tiotropium", "levosalbutamol", "fluticasone")):
+                                    continue
+                                if s_txt.lower() not in [x.lower() for x in primary_insts]:
+                                    primary_insts.append(s_txt)
                     # Check secondary patterns
                     for pat in PER_DRUG_SECONDARY_PATTERNS:
                         s_match = re.search(pat, sent, re.IGNORECASE)

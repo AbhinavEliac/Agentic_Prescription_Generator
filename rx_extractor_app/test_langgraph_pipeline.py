@@ -263,6 +263,78 @@ def test_natural_language_time_and_evaluation():
     print("PASS: Natural language times-of-day and evaluation sentence captured dynamically.")
 
 
+def test_punctuation_free_continuous_voice_speech():
+    print("\n--- Test 12: Continuous Unpunctuated Voice Speech Extraction ---")
+    raw_prescription = "Take this print 500mg 20mg tablets after breakfast if headache does not go away Meet the doctor also take walks after dinner and it will reduce your headaches Please see me after 7 days"
+    output, gen_time, agent_logs, blocks = run_graph_extraction(None, raw_prescription)
+    parsed = parse_output_fields(output, query=raw_prescription)
+    print(f"Extracted {len(parsed)} medicine block:")
+    for p in parsed:
+        print(f"  Drug_name: {p['Drug_name']}")
+        print(f"  strength: {p['strength']}")
+        print(f"  frequency: {p['frequency']}")
+        print(f"  duration: {p['duration']}")
+        print(f"  route: {p['route']}")
+        print(f"  instruction: {p['instruction']}")
+        print(f"  additional_instruction: {p.get('additional_instruction', 'NONE')}")
+
+    assert len(parsed) == 1
+    assert "this print 500mg" in parsed[0]["Drug_name"]
+    assert "20mg" in parsed[0]["strength"]
+    assert "oral" in parsed[0]["route"]
+    assert "after breakfast" in parsed[0]["instruction"].lower()
+    assert "after dinner" not in parsed[0]["instruction"].lower()
+    assert "doctor" in parsed[0]["additional_instruction"].lower()
+    assert "walks" in parsed[0]["additional_instruction"].lower()
+    print("PASS: Unpunctuated continuous voice speech and walking advice cleanly decoupled.")
+
+
+def test_complex_multidrug_decimal_and_advice_guards():
+    print("\n--- Test 13: Complex Multi-Drug Decimal Preservation & Non-Drug Guards ---")
+    raw_prescription = (
+        "Take Wallach Clover 1000 MCG Tablets, Overly 3 times Daily for 7 days and take 1 pre-gab ball in 75 MG capsule. "
+        "Once daily at bedtime for 14 days, take 1 parasitamol 500 MG with Phradamol 37.5 MG tablet twice daily after meals for severe pain for 5 days. "
+        "Apply Kalamine lotion gently over the close rash areas 3 times daily and take 1 methello glogamine 150,000 MG tablet daily after lunch for 30 days "
+        "keep the blistered area clean and dry avoid close physical contact with pregnant individuals or non-immune persons and return if the rash involves the eye region."
+    )
+    output, gen_time, agent_logs, blocks = run_graph_extraction(None, raw_prescription)
+    parsed = parse_output_fields(output, query=raw_prescription)
+    print(f"Extracted {len(parsed)} medicine blocks:")
+    for i, p in enumerate(parsed):
+        print(f"  {i+1}. {p['Drug_name']} | {p['frequency']} | {p['duration']} | {p['route']} | {p['instruction']}")
+
+    assert len(parsed) == 6
+    assert any("37.5" in p["Drug_name"] for p in parsed), "Decimal 37.5 MG was truncated!"
+    assert not any("pregnant" in p["Drug_name"].lower() for p in parsed), "Non-drug advice misclassified as medication!"
+    assert "clean and dry" in parsed[-1]["additional_instruction"].lower()
+    print("PASS: Decimals preserved, phonetic routes normalized, and non-drug advice guarded.")
+
+
+def test_noisy_transcript_and_conversational_chatter_filtering():
+    print("\n--- Test 14: Noisy Transcript & Conversational Chatter Filtering ---")
+    raw_prescription = (
+        "Good morning doctor. Hello Mr. Sharma, how are you feeling today? "
+        "I have severe fever and throat pain since yesterday. Let me check your vitals. "
+        "Temperature is 101 F, BP is 130/80 mmHg, chest is clear. "
+        "Take Augmentin 625mg twice daily for 5 days and take Paracetamol 650mg SOS for fever. "
+        "Gargle with warm salt water thrice daily and drink plenty of fluids. "
+        "Thank you doctor, I will take care. Have a great day."
+    )
+    output, gen_time, agent_logs, blocks = run_graph_extraction(None, raw_prescription)
+    parsed = parse_output_fields(output, query=raw_prescription)
+    print(f"Extracted {len(parsed)} medicine blocks:")
+    for i, p in enumerate(parsed):
+        print(f"  {i+1}. {p['Drug_name']} | {p['frequency']} | {p['duration']} | {p['route']} | {p['instruction']}")
+
+    assert len(parsed) == 2
+    assert "Augmentin 625mg" in parsed[0]["Drug_name"]
+    assert "Paracetamol 650mg" in parsed[1]["Drug_name"]
+    for p in parsed:
+        assert not any(noise in p["Drug_name"].lower() for noise in ("good morning", "sharma", "fever", "vitals", "130/80", "thank you", "great day"))
+    assert "gargle" in parsed[-1]["additional_instruction"].lower()
+    print("PASS: Conversational greetings, vitals, and sign-offs cleanly filtered out.")
+
+
 if __name__ == "__main__":
     test_multi_drug_diet_instructions()
     test_dual_dose_extraction()
@@ -275,6 +347,9 @@ if __name__ == "__main__":
     test_cross_sentence_and_class_instructions()
     test_additional_instructions_column()
     test_natural_language_time_and_evaluation()
+    test_punctuation_free_continuous_voice_speech()
+    test_complex_multidrug_decimal_and_advice_guards()
+    test_noisy_transcript_and_conversational_chatter_filtering()
     print("\n========================================================")
-    print("ALL 11 LANGGRAPH DRIFT-PROOF MULTI-AGENT TESTS PASSED!")
+    print("ALL 14 LANGGRAPH DRIFT-PROOF MULTI-AGENT TESTS PASSED!")
     print("========================================================")
