@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agentic Prescription Extractor & Studio</title>
+    <meta name="description" content="Parallel Node.js Application for LangGraph Multi-Agent Clinical Prescription Extraction and Multi-Engine Speech-to-Text Transcription.">
+    <!-- Google Fonts: Outfit & Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-background">
+        <div class="glow-orb orb-1"></div>
+        <div class="glow-orb orb-2"></div>
+        <div class="glow-orb orb-3"></div>
+    </div>
+
+    <!-- Header Navigation -->
+    <header class="app-header">
+        <div class="header-brand">
+            <div class="brand-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07l14.14-14.14"/>
+                </svg>
+            </div>
+            <div>
+                <h1 class="brand-title">RxAgent Studio</h1>
+                <p class="brand-subtitle">LangGraph Multi-Agent Prescription & STT Intelligence</p>
+            </div>
+        </div>
+
+        <div class="header-status-group">
+            <div class="status-badge" id="api-status-badge">
+                <span class="status-dot pulsing"></span>
+                <span id="api-status-text">Connecting to Agent Gateway...</span>
+            </div>
+            <nav class="nav-tabs">
+                <button class="nav-tab active" id="tab-studio-btn" onclick="switchView('studio')">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                    Prescription Studio
+                </button>
+                <button class="nav-tab" id="tab-history-btn" onclick="switchView('history')">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    History & Audit Logs
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Main Workspace Container -->
+    <main class="main-container">
+        <!-- VIEW 1: PRESCRIPTION STUDIO -->
+        <section id="view-studio" class="active-view">
+            <div class="workspace-grid">
+                
+                <!-- Left Column: Input & Controls -->
+                <div class="card glass-card input-card">
+                    <div class="card-header">
+                        <div class="card-title-group">
+                            <span class="step-num">01</span>
+                            <div>
+                                <h2 class="card-title">Clinical Consultation Input</h2>
+                                <p class="card-desc">Record live doctor voice notes or paste doctor instructions.</p>
+                            </div>
+                        </div>
+                        <div class="input-mode-toggle">
+                            <button class="mode-btn active" id="mode-text-btn" onclick="setInputMode('text')">Text Mode 📝</button>
+                            <button class="mode-btn" id="mode-voice-btn" onclick="setInputMode('voice')">Voice Studio 🎙️</button>
+                        </div>
+                    </div>
+
+                    <!-- Voice Recorder & STT Controls -->
+                    <div id="voice-controls-section" class="voice-section hidden">
+                        <div class="voice-config-bar">
+                            <div class="config-field">
+                                <label for="stt-model-select">STT Model Engine</label>
+                                <select id="stt-model-select" class="form-select">
+                                    <option value="whisper_ayush">Whisper Ayush (Fast Turbo)</option>
+                                    <option value="whisper_large_turbo">OpenAI Whisper Large v3 Turbo</option>
+                                    <option value="canary_1b">NVIDIA Canary 1B</option>
+                                    <option value="parakeet_tdt">NVIDIA Parakeet TDT 1.1B</option>
+                                    <option value="moonshine_base">Useful Sensors Moonshine Base</option>
+                                    <option value="moonshine_tiny">Useful Sensors Moonshine Tiny</option>
+                                    <option value="whisper_standard">OpenAI Whisper Base (Local)</option>
+                                </select>
+                            </div>
+                            <div class="config-field">
+                                <label>Audio Input Method</label>
+                                <div class="audio-source-switch">
+                                    <button class="submode-btn active" id="audio-mic-btn" onclick="setAudioSource('mic')">Microphone 🎤</button>
+                                    <button class="submode-btn" id="audio-file-btn" onclick="setAudioSource('file')">Upload Audio 📁</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Mic Recording Box -->
+                        <div id="mic-box" class="mic-recorder-box">
+                            <div class="visualizer-container">
+                                <canvas id="waveform-canvas" width="400" height="80"></canvas>
+                            </div>
+                            <div class="record-actions">
+                                <button id="record-toggle-btn" class="btn btn-record" onclick="toggleRecording()">
+                                    <span class="record-dot"></span>
+                                    <span id="record-btn-text">Start Recording</span>
+                                </button>
+                                <span id="record-timer" class="record-time">00:00</span>
+                            </div>
+                            <audio id="audio-preview" controls class="audio-player hidden"></audio>
+                        </div>
+
+                        <!-- File Upload Box -->
+                        <div id="file-box" class="file-uploader-box hidden">
+                            <div class="drop-zone" id="drop-zone" onclick="document.getElementById('audio-file-input').click()">
+                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                <p>Click or drag audio file here (.wav, .mp3, .m4a, .ogg)</p>
+                                <span id="selected-file-name" class="file-tag">No file selected</span>
+                            </div>
+                            <input type="file" id="audio-file-input" accept="audio/*" class="hidden" onchange="handleFileSelected(event)">
+                        </div>
+
+                        <div class="transcribe-action-row">
+                            <button id="transcribe-btn" class="btn btn-secondary" onclick="transcribeAudio()" disabled>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                                Transcribe Voice Note
+                            </button>
+                            <span id="transcribe-status" class="status-msg"></span>
+                        </div>
+                    </div>
+
+                    <!-- Prescription Text Area -->
+                    <div class="textarea-container">
+                        <textarea id="rx-input-text" class="form-textarea" placeholder="Enter clinical prescription note or transcribe voice above... (e.g. 'Take one Cefpodoxime proxetil 200 mg tablet twice daily after meals for 7 days...')"></textarea>
+                    </div>
+
+                    <!-- Quick Sample Pills -->
+                    <div class="sample-pills-row">
+                        <span class="sample-label">Quick Samples:</span>
+                        <button class="pill-btn" onclick="loadSample(1)">5-Med Complex Rx</button>
+                        <button class="pill-btn" onclick="loadSample(2)">Respiratory & Inhaler</button>
+                        <button class="pill-btn" onclick="loadSample(3)">Titration & Grammar</button>
+                        <button class="pill-btn" onclick="loadSample(4)">Topicals & Drops</button>
+                    </div>
+
+                    <!-- Model Settings & Extraction Trigger -->
+                    <div class="extraction-footer">
+                        <div class="footer-config">
+                            <div class="config-field mini">
+                                <label for="llm-model-select">LLM Engine</label>
+                                <select id="llm-model-select" class="form-select mini">
+                                    <option value="Llama 3.2 3B">Llama 3.2 3B</option>
+                                    <option value="Llama 3.2 1B">Llama 3.2 1B</option>
+                                    <option value="Llama 3.1 8B">Llama 3.1 8B</option>
+                                </select>
+                            </div>
+                            <div class="config-field mini">
+                                <label for="device-select">Compute Device</label>
+                                <select id="device-select" class="form-select mini">
+                                    <option value="cpu">CPU (Auto Multi-Thread)</option>
+                                    <option value="cuda">CUDA GPU</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <button id="run-extract-btn" class="btn btn-primary" onclick="runExtraction()">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                            <span>Run LangGraph Extraction</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Right Column: Agentic Workflow & Results -->
+                <div class="card glass-card output-card">
+                    <div class="card-header">
+                        <div class="card-title-group">
+                            <span class="step-num">02</span>
+                            <div>
+                                <h2 class="card-title">Structured Medication Output</h2>
+                                <p class="card-desc">Validated 7-column clinical fields with anti-drift guarantee.</p>
+                            </div>
+                        </div>
+                        <div class="export-actions">
+                            <button class="btn btn-sm btn-ghost" onclick="exportToCSV()" title="Export CSV">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                CSV
+                            </button>
+                            <button class="btn btn-sm btn-ghost" onclick="copyTableJSON()" title="Copy JSON">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                JSON
+                            </button>
+                            <button class="btn btn-sm btn-ghost" onclick="addNewRow()" title="Add Custom Row">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                                Add Row
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Progress Pipeline Visualizer -->
+                    <div id="progress-pipeline" class="progress-pipeline hidden">
+                        <div class="pipeline-step" id="step-supervisor">
+                            <div class="step-icon">1</div>
+                            <span>Supervisor</span>
+                        </div>
+                        <div class="pipeline-connector"></div>
+                        <div class="pipeline-step" id="step-agents">
+                            <div class="step-icon">2</div>
+                            <span>Parallel Agents</span>
+                        </div>
+                        <div class="pipeline-connector"></div>
+                        <div class="pipeline-step" id="step-validator">
+                            <div class="step-icon">3</div>
+                            <span>Validator Loop</span>
+                        </div>
+                        <div class="pipeline-connector"></div>
+                        <div class="pipeline-step" id="step-export">
+                            <div class="step-icon">4</div>
+                            <span>DB & Sync</span>
+                        </div>
+                    </div>
+
+                    <!-- Interactive Table Container -->
+                    <div class="table-responsive">
+                        <table id="rx-table" class="clinical-table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Drug Name</th>
+                                    <th>Strength</th>
+                                    <th>Frequency</th>
+                                    <th>Duration</th>
+                                    <th>Route</th>
+                                    <th>Primary Instruction</th>
+                                    <th>Additional Instruction</th>
+                                    <th class="actions-col">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rx-table-body">
+                                <tr>
+                                    <td colspan="9" class="empty-state">
+                                        <div class="empty-content">
+                                            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                                            <p>No prescription extracted yet. Record voice note or enter text on the left.</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Metrics / Metadata Bar -->
+                    <div class="metrics-bar">
+                        <span id="metric-meds" class="metric-item"><strong>0</strong> Medications</span>
+                        <span id="metric-latency" class="metric-item"><strong>0.00s</strong> Agent Latency</span>
+                        <span id="metric-process" class="metric-item">Process: <strong>Default</strong></span>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- VIEW 2: HISTORY & AUDIT LOGS -->
+        <section id="view-history" class="view-panel hidden">
+            <div class="card glass-card history-card">
+                <div class="card-header">
+                    <div class="card-title-group">
+                        <h2 class="card-title">Prescription History & Audit Trail</h2>
+                        <p class="card-desc">Synchronized in real-time with SQLite database (rx_history.db).</p>
+                    </div>
+                    <button class="btn btn-secondary btn-sm" onclick="loadHistory()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                        Refresh
+                    </button>
+                </div>
+                <div class="table-responsive">
+                    <table class="clinical-table history-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Timestamp</th>
+                                <th>Process</th>
+                                <th>Input Prescription Transcript</th>
+                                <th>Extracted Meds</th>
+                                <th>Latency</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="history-table-body">
+                            <tr>
+                                <td colspan="7" class="empty-state">Loading history...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast hidden"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>

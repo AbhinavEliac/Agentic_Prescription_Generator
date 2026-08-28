@@ -114,11 +114,16 @@ def add_history(process_id: int, query: str, output: str, generation_time: float
 
 
 
-def get_history(process_id: int):
+def get_history(process_id: int = None, limit: int = 50):
     with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM history WHERE process_id = ? ORDER BY id ASC", (process_id,)
-        ).fetchall()
+        if process_id is not None:
+            rows = conn.execute(
+                "SELECT * FROM history WHERE process_id = ? ORDER BY id DESC LIMIT ?", (process_id, limit)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM history ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
         return [dict(r) for r in rows]
 
 

@@ -61,6 +61,14 @@ gpt4all/
 .env.*
 !.env.example
 
+# Node.js Dependencies
+node_modules/
+*/node_modules/
+
+# Local Model Weights & Fine-Tuned Checkpoints
+Whisper_Ayush/
+*/Whisper_Ayush/
+
 # IDE & OS Generated Files
 .vscode/
 .idea/
