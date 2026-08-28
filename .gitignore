@@ -1,0 +1,70 @@
+# Virtual Environments
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+*/env/
+*/venv/
+*/.venv/
+
+# Python Cache & Bytecode
+__pycache__/
+*/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Prescription JSON & Training Datasets
+*.json
+*.jsonl
+naturalized_prescriptions_final.jsonl
+*prescription*.json
+*prescription*.jsonl
+data/*.json
+data/*.jsonl
+
+# App Data, SQLite Databases & Output Files
+data/
+*/data/
+*.db
+*.sqlite
+*.sqlite3
+*.csv
+*.xlsx
+*.tsv
+outputs/
+*/outputs/
+
+# Audio Recordings & Transcripts
+*.wav
+*.mp3
+*.m4a
+*.ogg
+audio_files/
+*/audio_files/
+
+# FAISS Vectorstore Indices & Embeddings Cache
+faiss_index/
+*/faiss_index/
+*.faiss
+*.pkl
+models/
+*/models/
+gpt4all/
+*/gpt4all/
+
+# Environment Variables & Secrets
+.env
+.env.*
+!.env.example
+
+# IDE & OS Generated Files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.tmp
+*.log

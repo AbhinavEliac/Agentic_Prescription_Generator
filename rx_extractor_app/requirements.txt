@@ -1,0 +1,21 @@
+# --- LangChain & LangGraph Multi-Agent Architecture ------------------------
+langchain>=0.2.0
+langchain-core>=0.2.0
+langgraph>=0.2.0
+langchain-community>=0.2.0
+
+# --- Local Offline LLM Inference Backend (GPT4All / GGUF) ------------------
+gpt4all>=2.7.0
+
+# --- Local Vector Store & Embeddings Cache ---------------------------------
+faiss-cpu>=1.7.4
+
+# --- Local Whisper Speech-to-Text Transcriber & Audio Decoders --------------
+openai-whisper
+imageio-ffmpeg
+soundfile
+
+# --- Streamlit UI, DataFrames & Multi-Format Exporters ---------------------
+streamlit>=1.32.0
+pandas>=2.0.0
+openpyxl>=3.1.0
