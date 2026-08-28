@@ -30,61 +30,61 @@ The system operates concurrently across Python and Node.js environments sharing 
 
 ```mermaid
 graph TD
-    Doctor["👨‍⚕️ Doctor / Clinical Practitioner"]
+    Doctor["Doctor / Clinical Practitioner"]
 
-    subgraph Frontends["🖥️ Dual Parallel Frontends"]
-        StreamlitUI["📊 Streamlit Clinical Dashboard (Port 8501)"]
-        NodeUI["⚡ Node.js RxAgent Studio (Port 3000)"]
+    subgraph Frontends ["Dual Parallel Frontends"]
+        StreamlitUI["Streamlit Clinical Dashboard (Port 8501)"]
+        NodeUI["Node.js RxAgent Studio (Port 3000)"]
     end
 
-    subgraph APILayer["🌐 REST Gateway Layer"]
-        FastAPIServer["🚀 FastAPI Backend Service (Port 8080)"]
+    subgraph APILayer ["REST Gateway Layer"]
+        FastAPIServer["FastAPI Backend Service (Port 8080)"]
     end
 
-    subgraph AgenticEngine["🧠 LangGraph Multi-Agent Core Engine"]
-        Supervisor["🎯 Supervisor Agent<br/>(Noise Filter, Conversational Guard, Fan-Out)"]
+    subgraph AgenticEngine ["LangGraph Multi-Agent Core Engine"]
+        Supervisor["Supervisor Agent - Noise Filter and Fan-Out"]
         
-        subgraph ParallelNodes["⚙️ Parallel Specialized Extractors"]
-            MedNode["💊 Medicine & Strength Agent<br/>(Dose Concatenation & Companion Splitting)"]
-            RouteNode["📍 Route Specificity Agent<br/>(Oral, Topical, Inhalation, Ophthalmic, Nasal)"]
-            DurFreqNode["⏱️ Duration & Frequency Agent<br/>(Informal Durations, Interval Schedules, Coreferences)"]
-            InstNode["📋 Instruction & Precaution Agent<br/>(Meal Timings, Devices, Titrations, Generic Advice)"]
+        subgraph ParallelNodes ["Parallel Specialized Extractors"]
+            MedNode["Medicine and Strength Agent"]
+            RouteNode["Route Specificity Agent"]
+            DurFreqNode["Duration and Frequency Agent"]
+            InstNode["Instruction and Precaution Agent"]
         end
         
-        Aggregator["🧩 Aggregator Agent<br/>(Deduplication, Entity Union & Cross-Attribute Binding)"]
-        Validator["🛡️ Validator QA Loop<br/>(Anti-Hallucination & Groundedness Verification)"]
-        Formatter["📄 Formatter Agent<br/>(Strict 7-Column Canonical Prescription Records)"]
+        Aggregator["Aggregator Agent - Deduplication and Union"]
+        Validator["Validator QA Loop - Anti-Hallucination"]
+        Formatter["Formatter Agent - 7-Column Canonical Records"]
     end
 
-    subgraph SpeechEngines["🎙️ Multi-Engine Speech-to-Text Suite"]
-        AyushWhisper["⚡ Whisper Ayush (Fine-Tuned Turbo + SDPA)"]
-        Canary["🦅 NVIDIA Canary 1B (Multilingual ASR)"]
-        Parakeet["🦜 NVIDIA Parakeet TDT 1.1B (Streaming ASR)"]
-        Moonshine["🌙 Useful Sensors Moonshine (Edge Base/Tiny)"]
-        StandardWhisper["🔊 OpenAI Whisper (Local Base/Tiny)"]
+    subgraph SpeechEngines ["Multi-Engine Speech-to-Text Suite"]
+        AyushWhisper["Whisper Ayush (Fast Turbo + SDPA)"]
+        Canary["NVIDIA Canary 1B"]
+        Parakeet["NVIDIA Parakeet TDT 1.1B"]
+        Moonshine["Useful Sensors Moonshine"]
+        StandardWhisper["OpenAI Whisper Base"]
     end
 
-    subgraph DataStorage["💾 Shared Persistence & Audit Trail"]
-        SQLiteDB[(🗄️ SQLite Database rx_history.db)]
-        Outputs["📑 Export Spreadsheets (data/outputs/*.csv, *.xlsx)"]
-        AudioVault["🎵 Voice Recordings (data/audio_files/*.wav)"]
+    subgraph DataStorage ["Shared Persistence and Audit Trail"]
+        SQLiteDB[("SQLite Database rx_history.db")]
+        Outputs["Export Spreadsheets (.csv / .xlsx)"]
+        AudioVault["Voice Recordings (.wav)"]
     end
 
-    Doctor -->|Voice / Text| StreamlitUI
-    Doctor -->|Voice / Text| NodeUI
+    Doctor -->|"Voice / Text"| StreamlitUI
+    Doctor -->|"Voice / Text"| NodeUI
     
-    StreamlitUI -->|Direct Python In-Process| Supervisor
-    StreamlitUI -->|Direct Inference| SpeechEngines
+    StreamlitUI -->|"Direct In-Process"| Supervisor
+    StreamlitUI -->|"Direct Inference"| SpeechEngines
     
-    NodeUI -->|HTTP / JSON Proxy| FastAPIServer
-    FastAPIServer -->|Async Worker| Supervisor
-    FastAPIServer -->|Multipart Audio| SpeechEngines
+    NodeUI -->|"HTTP / JSON Proxy"| FastAPIServer
+    FastAPIServer -->|"Async Worker"| Supervisor
+    FastAPIServer -->|"Multipart Audio"| SpeechEngines
     
     Supervisor --> ParallelNodes
     ParallelNodes --> Aggregator
     Aggregator --> Validator
-    Validator -->|Grounded / Valid| Formatter
-    Validator -.->|Needs Correction (Max 3 Retries)| Supervisor
+    Validator -->|"Grounded / Valid"| Formatter
+    Validator -.->|"Needs Correction - Max 3 Retries"| Supervisor
     
     Formatter --> SQLiteDB
     Formatter --> Outputs
@@ -97,24 +97,24 @@ graph TD
 
 ```mermaid
 flowchart LR
-    Start([Raw Input]) --> Sup[Supervisor Agent]
+    Start(["Raw Clinical Input"]) --> Sup["Supervisor Agent"]
     
-    Sup --> Med[Medicine Agent]
-    Sup --> Route[Route Agent]
-    Sup --> DurFreq[Duration/Freq Agent]
-    Sup --> Inst[Instruction Agent]
+    Sup --> Med["Medicine & Strength Agent"]
+    Sup --> Route["Route Specificity Agent"]
+    Sup --> DurFreq["Duration & Frequency Agent"]
+    Sup --> Inst["Instruction & Precaution Agent"]
     
-    Med --> Agg[Aggregator Agent]
+    Med --> Agg["Aggregator Agent"]
     Route --> Agg
     DurFreq --> Agg
     Inst --> Agg
     
-    Agg --> Val{Validator QA}
+    Agg --> Val{"Validator QA Loop"}
     
-    Val -- "Feedback / Drift" --> Sup
-    Val -- "100% Grounded" --> Form[Formatter Agent]
+    Val -->|"Targeted Feedback / Drift"| Sup
+    Val -->|"100% Grounded"| Form["Formatter Agent"]
     
-    Form --> End([Structured 7-Column Table])
+    Form --> End(["Validated 7-Column Table"])
 ```
 
 ---
