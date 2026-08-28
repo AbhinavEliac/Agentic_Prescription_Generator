@@ -24,97 +24,79 @@ Built on an anti-hallucination **LangGraph Multi-Agent Architecture**, the engin
 
 ---
 
-## 🏗️ System Architecture & Dual-Frontend Flowsheet
-
-The system operates concurrently across Python and Node.js environments sharing a synchronized SQLite audit database and file export storage:
+## 🏗️ 1. End-to-End System Architecture
 
 ```mermaid
-graph TD
-    Doctor["Doctor / Clinical Practitioner"]
-
-    subgraph Frontends ["Dual Parallel Frontends"]
-        StreamlitUI["Streamlit Clinical Dashboard (Port 8501)"]
-        NodeUI["Node.js RxAgent Studio (Port 3000)"]
+flowchart TD
+    subgraph S1 ["1. Clinical Inputs"]
+        Voice["🎙️ Doctor Voice Note"]
+        Text["📝 Prescription Text"]
     end
 
-    subgraph APILayer ["REST Gateway Layer"]
-        FastAPIServer["FastAPI Backend Service (Port 8080)"]
+    subgraph S2 ["2. Dual Frontends"]
+        Streamlit["📊 Streamlit Dashboard (Port 8501)"]
+        NodeApp["⚡ Node.js Studio App (Port 3000)"]
     end
 
-    subgraph AgenticEngine ["LangGraph Multi-Agent Core Engine"]
-        Supervisor["Supervisor Agent - Noise Filter and Fan-Out"]
-        
-        subgraph ParallelNodes ["Parallel Specialized Extractors"]
-            MedNode["Medicine and Strength Agent"]
-            RouteNode["Route Specificity Agent"]
-            DurFreqNode["Duration and Frequency Agent"]
-            InstNode["Instruction and Precaution Agent"]
-        end
-        
-        Aggregator["Aggregator Agent - Deduplication and Union"]
-        Validator["Validator QA Loop - Anti-Hallucination"]
-        Formatter["Formatter Agent - 7-Column Canonical Records"]
+    subgraph S3 ["3. API & Speech Processing"]
+        STT["🎙️ Multi-Engine STT<br/>(Whisper Ayush / Canary / Moonshine)"]
+        FastAPI["🚀 FastAPI Gateway (Port 8080)"]
     end
 
-    subgraph SpeechEngines ["Multi-Engine Speech-to-Text Suite"]
-        AyushWhisper["Whisper Ayush (Fast Turbo + SDPA)"]
-        Canary["NVIDIA Canary 1B"]
-        Parakeet["NVIDIA Parakeet TDT 1.1B"]
-        Moonshine["Useful Sensors Moonshine"]
-        StandardWhisper["OpenAI Whisper Base"]
+    subgraph S4 ["4. LangGraph Multi-Agent Core"]
+        Graph["🧠 LangGraph Multi-Agent StateGraph<br/>(Parallel Extraction + Anti-Hallucination QA)"]
     end
 
-    subgraph DataStorage ["Shared Persistence and Audit Trail"]
-        SQLiteDB[("SQLite Database rx_history.db")]
-        Outputs["Export Spreadsheets (.csv / .xlsx)"]
-        AudioVault["Voice Recordings (.wav)"]
+    subgraph S5 ["5. Storage & Export"]
+        DB[("🗄️ SQLite rx_history.db")]
+        Files["📑 CSV & Excel (.xlsx)"]
     end
 
-    Doctor -->|"Voice / Text"| StreamlitUI
-    Doctor -->|"Voice / Text"| NodeUI
+    Voice --> STT
+    Text --> Streamlit
+    Text --> NodeApp
+    STT --> Streamlit
+    STT --> FastAPI
     
-    StreamlitUI -->|"Direct In-Process"| Supervisor
-    StreamlitUI -->|"Direct Inference"| SpeechEngines
+    NodeApp <--> FastAPI
+    Streamlit --> Graph
+    FastAPI --> Graph
     
-    NodeUI -->|"HTTP / JSON Proxy"| FastAPIServer
-    FastAPIServer -->|"Async Worker"| Supervisor
-    FastAPIServer -->|"Multipart Audio"| SpeechEngines
-    
-    Supervisor --> ParallelNodes
-    ParallelNodes --> Aggregator
-    Aggregator --> Validator
-    Validator -->|"Grounded / Valid"| Formatter
-    Validator -.->|"Needs Correction - Max 3 Retries"| Supervisor
-    
-    Formatter --> SQLiteDB
-    Formatter --> Outputs
-    SpeechEngines --> AudioVault
+    Graph --> DB
+    Graph --> Files
 ```
 
 ---
 
-## 🔄 LangGraph StateGraph Execution Flow
+## 🧠 2. LangGraph Multi-Agent Extraction Pipeline
 
 ```mermaid
-flowchart LR
-    Start(["Raw Clinical Input"]) --> Sup["Supervisor Agent"]
+flowchart TD
+    In(["📥 Raw Clinical Transcript"]) --> Sup["🎯 Supervisor Agent<br/>(Noise Filter & Query Segmenter)"]
     
-    Sup --> Med["Medicine & Strength Agent"]
-    Sup --> Route["Route Specificity Agent"]
-    Sup --> DurFreq["Duration & Frequency Agent"]
-    Sup --> Inst["Instruction & Precaution Agent"]
+    subgraph ParallelAgents ["⚡ Parallel Specialized Extractors"]
+        Med["💊 Medicine & Strength Agent<br/>(Generic Names & Multi-Dose Pairing)"]
+        Route["📍 Route Specificity Agent<br/>(Oral, Inhalation, Topical, Drops, Sprays)"]
+        DurFreq["⏱️ Duration & Frequency Agent<br/>(Schedules, Time Spans & Coreferences)"]
+        Inst["📋 Instruction & Precaution Agent<br/>(Meal Rules, Devices & Clinical Advice)"]
+    end
     
-    Med --> Agg["Aggregator Agent"]
+    Sup --> Med
+    Sup --> Route
+    Sup --> DurFreq
+    Sup --> Inst
+    
+    Med --> Agg["🧩 Aggregator Agent<br/>(Deduplication & Record Unification)"]
     Route --> Agg
     DurFreq --> Agg
     Inst --> Agg
     
-    Agg --> Val{"Validator QA Loop"}
+    Agg --> Val{"🛡️ Validator QA Loop<br/>(Anti-Hallucination Check)"}
     
-    Val -->|"Targeted Feedback / Drift"| Sup
-    Val -->|"100% Grounded"| Form["Formatter Agent"]
+    Val -- "Needs Correction (Max 3 Loops)" --> Sup
+    Val -- "100% Grounded" --> Form["📄 Formatter Agent<br/>(Strict 7-Column Canonical Schema)"]
     
-    Form --> End(["Validated 7-Column Table"])
+    Form --> Out(["✅ Validated 7-Column Table"])
 ```
 
 ---
