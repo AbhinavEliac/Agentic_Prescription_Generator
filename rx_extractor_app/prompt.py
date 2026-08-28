@@ -92,13 +92,16 @@ Task: Extract the exact frequency and duration for each medicine.
 
 Rules:
 1. FREQUENCY: Extract verbatim, preserving all parenthetical notations, abbreviations, and clinical timings:
-   - Examples: "twice daily(1-0-1)", "once daily", "OD", "BD", "TID(1-1-1)", "QID(1-1-1-1)", "single dose", "as needed (SOS)", "at bedtime".
+   - Examples: "twice daily(1-0-1)", "once daily", "OD", "BD", "TID(1-1-1)", "QID(1-1-1-1)", "single dose", "as needed (SOS)", "at bedtime", "4 times a day".
    - If not mentioned -> NONE.
 2. DURATION: Extract exact duration phrase only:
    - Examples: "5 days", "7 days", "14 days", "1 month", "60 days", "day one".
    - If not mentioned -> NONE.
 3. Companion drugs ("Drug A with Drug B once daily for 60 days") -> both share the specified frequency and duration.
-4. NO conversational text, NO explanations.
+4. Cross-Sentence Coreference Resolution:
+   - If frequency or duration is given in a subsequent reference sentence (e.g., "It should be taken 4 times a day", "This medicine is to be taken twice daily"), attribute it to the referenced medicine.
+   - If a group/plural reference is used (e.g., "Both should be taken twice daily", "All medicines are once daily for 10 days", "Take each of them three times a day"), apply the specified frequency/duration to all referenced medicines.
+5. NO conversational text, NO explanations.
 
 Output Format Example:
 [
@@ -122,8 +125,9 @@ Rules:
 1. Extract verbatim from the input text without paraphrasing or summarizing.
 2. Primary instruction: specific meal timings, preparation methods, ingestion instructions (e.g., "before breakfast", "after meals", "dissolve in water", "rinse mouth after use").
 3. Additional instruction: clinical monitoring, reassessment, adverse effect warnings, titrations, and general diet/lifestyle advice (e.g., "seek reassessment if adverse effects develop", "discontinue once fever resolves", "if BP remains high consult doctor", "include green leafy vegetables in diet", "go for morning walks daily").
-4. If none -> NONE.
-5. STRICT PROHIBITION: Do NOT generate artificial cautions or warnings not literally spoken by the doctor.
+4. Exclusion: Do NOT extract frequency/schedule coreference sentences (e.g., "It should be taken 4 times a day", "Both are once daily") into additional_instruction, as those belong strictly to the frequency column.
+5. If none -> NONE.
+6. STRICT PROHIBITION: Do NOT generate artificial cautions or warnings not literally spoken by the doctor.
 
 Output Format Example:
 [

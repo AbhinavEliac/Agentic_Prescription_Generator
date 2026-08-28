@@ -12,6 +12,7 @@ faiss-cpu>=1.7.4
 
 # --- Local Whisper Speech-to-Text Transcriber & Audio Decoders --------------
 openai-whisper
+transformers
 imageio-ffmpeg
 soundfile
 

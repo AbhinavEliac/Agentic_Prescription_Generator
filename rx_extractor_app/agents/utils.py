@@ -203,7 +203,7 @@ def segment_prescription(input_text: str) -> List[Dict[str, Any]]:
 
     # 2. Split intra-sentence transition points (e.g. "Take A, and take B, also start C")
     split_pattern = (
-        r"(?i)(?:,\s*(?:and\s+take|also\s+take|additionally(?:,\s*take)?|then\s+take|take\s+one|take\s+two|take\s+10\s*ml|take\s+\d+|take\s+(?!(?:walks?|a\s+walk|rest|care|steam|bath))\b|"
+        r"(?i)(?:,\s*(?:and\s+take|also\s+take|additionally(?:,\s*take)?|then\s+take|take\s+one|take\s+two|take\s+10\s*ml|take\s+\d+|take\s+(?!(?:walks?|a\s+walk|rest|care|steam|bath|water|regular\s+water|warm\s+water|cold\s+water|fluids?|food|meals?))\b|"
         r"and\s+start|also\s+start|start\s+one|start|"
         r"and\s+administer|also\s+administer|administer\s+one|administer\s+two|administer|"
         r"and\s+give|also\s+give|give\s+one|give|"
@@ -217,8 +217,8 @@ def segment_prescription(input_text: str) -> List[Dict[str, Any]]:
         r"and\s+instill|also\s+instill|instill\s+two|instill\s+three|instill\s+one|instill|"
         r"and\s+cleanse|cleanse\s+the\s+skin|cleanse|"
         r"and\s+put|also\s+put|put\s+one|put|inject\s+one|inject|infuse\s+one|infuse)|"
-        r"\band\s+take\s+\d+\b|\band\s+take\s+(?!(?:walks?|a\s+walk|rest|care|steam|bath))\b|"
-        r"\balso\s+take\s+(?!(?:walks?|a\s+walk|rest|care|steam|bath))\b|"
+        r"\band\s+take\s+\d+\b|\band\s+take\s+(?!(?:walks?|a\s+walk|rest|care|steam|bath|water|regular\s+water|warm\s+water|cold\s+water|fluids?|food|meals?))\b|"
+        r"\balso\s+take\s+(?!(?:walks?|a\s+walk|rest|care|steam|bath|water|regular\s+water|warm\s+water|cold\s+water|fluids?|food|meals?))\b|"
         r"\badditionally\b|\bthen\s+take\b|"
         r"\band\s+start\b|\band\s+administer\b|\band\s+consume\b|\band\s+dissolve\b|\band\s+spray\b|\band\s+instill\b|\binhale\s+one\b|\binhale\s+two\b|\bapply\s+one\b|\bapply\s+a\b|"
         r"\bkeep\s+the\s+blistered\s+area\b|\bavoid\s+close\s+physical\s+contact\b|\breturn\s+if\s+the\s+rash\b)"
@@ -238,9 +238,10 @@ def segment_prescription(input_text: str) -> List[Dict[str, Any]]:
     # Non-drug trigger keywords that indicate a clause is advice/follow-up, not a medicine
     PURE_ADVICE_TRIGGERS = [
         r"^(?:return|come\s+back|follow\s+up|review|get\s+reassessed|seek|consult|contact|report|visit|revisit|arrange|schedule|repeat|re-?test)\b",
-        r"^(?:meet\s+(?:the\s+)?doctor|please\s+see\s+me|see\s+(?:your\s+|the\s+)?doctor)\b",
+        r"^(?:meet\s+(?:the\s+)?doctor|please\s+see\s+me|see\s+(?:your\s+|the\s+)?doctor|come\s+(?:and\s+)?visit\s+(?:the\s+|your\s+)?doctor|visit\s+(?:the\s+|your\s+)?doctor)\b",
         r"^(?:do\s+not|avoid|strictly\s+avoid|discontinue|stop|keep|maintain|stick\s+to|include|limit|practice|brush|perform)\b",
         r"^(?:drink|consume|stay\s+well-hydrated|apply\s+local|apply\s+ice|sponge|wear|monitor|be\s+sure\s+to|if\s+)\b",
+        r"^(?:take\s+(?:regular\s+|warm\s+|cold\s+|plenty\s+of\s+|sufficient\s+|clean\s+)?(?:water|fluids?))\b",
         r"(?:also\s+)?take\s+walks?",
         r"go\s+for\s+(?:morning\s+)?walks?",
         r"(?:apply\s+)?(?:local\s+)?hot\s+water\s+fomentation",
@@ -266,14 +267,14 @@ def segment_prescription(input_text: str) -> List[Dict[str, Any]]:
 
         # Check if the clause has any medication indicator (action verb, dosage, or form word)
         has_med_indicator = bool(
-            re.search(r"(?i)(?:\b(?:take\s+(?!(?:walks?|rest|care|steam))\w+|administer|give|prescribe|start|consume|dissolve|inhale|apply|put|instill|inject|infuse|tablet|tab|capsule|cap|rotacap|vial|sachet|syrup|gel|drops?|spray|ointment|cream|lotion)\b|\d+\s*(?:mg|g|mcg|ml|iu|%)\b)", clause_clean)
+            re.search(r"(?i)(?:\b(?:take\s+(?!(?:walks?|rest|care|steam|water|regular\s+water|warm\s+water|cold\s+water|fluids?))\w+|administer|give|prescribe|start|consume|dissolve|inhale|apply|put|instill|inject|infuse|tablet|tab|capsule|cap|rotacap|vial|sachet|syrup|gel|drops?|spray|ointment|cream|lotion)\b|\d+\s*(?:mg|g|mcg|ml|iu|%)\b)", clause_clean)
         )
         if not has_med_indicator and len(segments) > 0:
             continue
 
-        # Check companion drug "combination of A and B" or "A with B [dose]"
-        # 1. "combination tablet/of A and B"
-        comb_match = re.search(r"combination\s+(?:tablet\s+of\s+|of\s+)?([A-Za-z0-9\s\.\-]+?\d+(?:\.\d+)?\s*(?:mg|g|mcg|ml|IU)?)\s+and\s+([A-Za-z0-9\s\.\-]+?\d+(?:\.\d+)?\s*(?:mg|g|mcg|ml|IU)?)", clause_clean, re.IGNORECASE)
+        # Check companion drug "combination of A and B", "Take A and B [dose]", or "A with B [dose]"
+        # 1. "combination tablet/of A and B" or "Take A and B [dose]"
+        comb_match = re.search(r"(?:combination\s+(?:tablet\s+of\s+|of\s+)?|take\s+|administer\s+|give\s+)?([A-Za-z0-9\s\.\-]+?\d+(?:\.\d+)?\s*(?:mg|g|mcg|ml|IU))\s+and\s+([A-Za-z0-9\s\.\-]+?\d+(?:\.\d+)?\s*(?:mg|g|mcg|ml|IU)?)", clause_clean, re.IGNORECASE)
         if comb_match:
             d1_raw = comb_match.group(1).strip()
             d2_raw = comb_match.group(2).strip()

@@ -43,7 +43,8 @@ INDEPENDENT_ADVICE_START = (
     r"limit\s+your|limit\s+fluid|limit|"
     r"practice\s+pursed-lip|practice|"
     r"brush\s+gently|brush|"
-    r"perform\s+steam|perform\s+gentle|perform|"
+    r"perform\s+steam\s+inhalation|perform\s+steam|perform\s+gentle|perform|"
+    r"use\s+saline\s+nasal|use\s+saline|"
     r"drink\s+plenty|drink\s+2|drink\s+warm|drink|"
     r"consume\s+plenty|consume\s+warm|stay\s+well-hydrated|"
     r"apply\s+local\s+hot|apply\s+ice\s+packs?|"
@@ -51,12 +52,14 @@ INDEPENDENT_ADVICE_START = (
     r"(?:also\s+)?take\s+walks?|go\s+for\s+walks?|take\s+rest|take\s+steam|"
     r"wear\s+loose|monitor\s+your|monitor\s+weight|monitor\s+blood|monitor\s+inr|monitor|"
     r"be\s+sure\s+to\s+rinse|rinse\s+your\s+mouth\s+thoroughly|rinse\s+mouth\s+after|"
-    r"if\s+headache|if\s+blood\s+pressure|if\s+fever|if\s+symptoms|if\s+pain|if\s+rash|if\s+numbness|if\s+severe|if\s+ulcers|if\s+condition|if\s+breathing|if\s+dizziness)\b"
+    r"if\s+headache|if\s+blood\s+pressure|if\s+fever|if\s+symptoms|if\s+pain|if\s+rash|if\s+numbness|if\s+severe|if\s+ulcers|if\s+condition|if\s+breathing|if\s+dizziness|"
+    r"(?:increase|decrease|reduce|double|taper)\s+(?:the\s+)?(?:dose|dosage))\b"
 )
 
 # Robust punctuation-independent clinical advice pattern (captures continuous speech advice)
 CONTINUOUS_ADVICE_SPAN_PATTERNS = [
-    r"(?i)\b(?:if\s+[a-zA-Z\s\-]+?(?:does\s+not\s+go\s+away|does\s+not\s+clear|persists|worsens|increases|crosses\s+\d+|develops|occurs|remains\s+high|subsides|heals|drops\s+to\s+normal)(?:\s+(?:Meet\s+(?:the\s+)?doctor|consult\s+(?:your\s+)?doctor|seek\s+medical\s+review|visit\s+(?:the\s+)?emergency|report\s+immediately))?)\b",
+    r"(?i)\b(?:if\s+[a-zA-Z\s\-]+?(?:does\s+not\s+go\s+away|does\s+not\s+clear|persists|worsens|increases|crosses\s+\d+|develops|occurs|remains\s+high|subsides|heals|drops\s+to\s+normal)(?:,\s*|\s+)?(?:(?:increase|decrease|reduce|double|taper)\s+(?:the\s+)?(?:dose|dosage)(?:\s+by\s+\d+\s*(?:mgs?|mg|g|mcg|ml))?|Meet\s+(?:the\s+)?doctor|come\s+visit\s+(?:the\s+|your\s+)?doctor|consult\s+(?:your\s+)?doctor|seek\s+medical\s+review|visit\s+(?:the\s+)?emergency|report\s+immediately)?)\b",
+    r"(?i)\b(?:(?:increase|decrease|reduce|double|taper)\s+(?:the\s+)?(?:dose|dosage)\s+(?:by\s+)?\d+\s*(?:mgs?|mg|g|mcg|ml)?(?:,\s*|\s+)?(?:if\s+[a-zA-Z\s\-]+?(?:does\s+not\s+go\s+away|does\s+not\s+clear|persists|worsens|increases|crosses\s+\d+|develops|occurs|remains\s+high|subsides|heals))?)\b",
     r"(?i)\b(?:meet\s+(?:the\s+)?doctor)\b",
     r"(?i)\b(?:please\s+see\s+me(?:\s+after\s+\d+\s+days?)?)\b",
     r"(?i)\b(?:see\s+(?:your\s+|the\s+)?doctor(?:\s+after\s+\d+\s+days?)?)\b",
@@ -73,10 +76,15 @@ CONTINUOUS_ADVICE_SPAN_PATTERNS = [
     r"(?i)\b(?:include\s+(?:dark\s+)?green\s+leafy[a-zA-Z\s]*)\b",
     r"(?i)\b(?:drink\s+(?:plenty|2\.5|\d+\s+liters)[a-zA-Z\s]*)\b",
     r"(?i)\b(?:apply\s+(?:local\s+)?hot\s+water\s+fomentation[a-zA-Z\s]*)\b",
-    r"(?i)\b(?:apply\s+ice\s+packs?[a-zA-Z\s]*)\b",
     r"(?i)\b(?:keep\s+(?:the\s+)?(?:blistered|affected|skin|dressing|ear)\s+area\s+clean\s+and\s+dry)\b",
     r"(?i)\b(?:avoid\s+close\s+physical\s+contact[a-zA-Z\s]*)\b",
     r"(?i)\b(?:return\s+if\s+the\s+rash\s+involves[a-zA-Z\s]*)\b",
+    r"(?i)\b(?:come\s+(?:and\s+)?visit\s+(?:the\s+|your\s+)?doctor)\b",
+    r"(?i)\b(?:visit\s+(?:the\s+|your\s+)?doctor)\b",
+    r"(?i)\b(?:take\s+(?:regular\s+|warm\s+|cold\s+|plenty\s+of\s+|sufficient\s+|clean\s+)?(?:water|fluids?))\b",
+    r"(?i)\b(?:(?:use\s+)?saline\s+nasal\s+irrigations?(?:\s+twice\s+daily)?)\b",
+    r"(?i)\b(?:perform\s+steam\s+inhalation(?:\s+daily)?)\b",
+    r"(?i)\b(?:seek\s+reassessment\s+if\s+[a-zA-Z\s\-]+?develops?)\b",
 ]
 
 # Intra-clause primary administration expressions (times of day, meals, devices, preparations, PRN)
@@ -98,6 +106,7 @@ PRIMARY_INSTRUCTION_PATTERNS = [
     r"\busing\s+(?:the\s+)?Revolizer\s+device\b",
     r"\busing\s+(?:your\s+)?dry\s+powder\s+inhaler(?:\s+and\s+rinse\s+your\s+mouth\s+immediately)?\b",
     r"\bvia\s+an?\s+MDI\s+spacer(?:\s+as\s+needed)?\b",
+    r"\binto\s+each\s+nostril\b",
     r"\b\d+\s+sprays?\s+into\s+each\s+nostril\b",
     r"\b\d+\s+drops?\s+into\s+(?:each\s+nostril|the\s+affected\s+ear|both\s+eyes|left\s+eye|right\s+eye)(?:\s+for\s+no\s+more\s+than\s+\d+\s+days)?(?:\s+ensuring\s+the\s+eardrum\s+is\s+intact)?\b",
     r"\b\d+\s+teaspoons?\s+diluted\s+in\s+a\s+full\s+glass\s+of\s+water\b",
@@ -134,9 +143,10 @@ PER_DRUG_SECONDARY_PATTERNS = [
     r"without\s+starting\s+new\s+uric\s+acid\s+reducers[^\.\n,]*",
     r"alongside\s+[^,\.\n]+\s+to\s+optimize\s+[^,\.\n]+",
     r"alongside\s+[^,\.\n]+\s+to\s+maximize\s+[^,\.\n]+",
-    r"increase\s+the\s+dose\s+by\s+[^,\.\n]+",
-    r"decrease\s+the\s+dose\s+by\s+[^,\.\n]+",
-    r"taper\s+(?:the\s+)?dose\s+by\s+[^,\.\n]+",
+    r"(?:for\s+)?(?:a\s+)?strict\s+maximum\s+of\s+\d+\s+days?",
+    r"for\s+no\s+more\s+than\s+\d+\s+days?",
+    r"(?:increase|decrease|reduce|double|taper)\s+(?:the\s+)?(?:dose|dosage)(?:\s+by\s+[^,\.\n]+)?(?:\s+if\s+[^,\.\n]+)?",
+    r"if\s+[^,\.\n]+?\s+(?:increase|decrease|reduce|double|taper)\s+(?:the\s+)?(?:dose|dosage)(?:\s+by\s+[^,\.\n]+)?",
     r"discontinue\s+once\s+[^,\.\n]+",
     r"stop\s+(?:taking\s+)?if\s+[^,\.\n]+",
     r"do\s+not\s+stop\s+(?:the\s+)?(?:antibiotic\s+)?course\s+early[^\.\n]*",
@@ -144,24 +154,23 @@ PER_DRUG_SECONDARY_PATTERNS = [
 ]
 
 DRUG_CLASS_MAP = {
-    "antibiotic": ["amoxicillin", "augmentin", "azithromycin", "ciprofloxacin", "ofloxacin", "cefixime", "doxycycline", "clavulanate", "penicillin", "phexin", "clarithromycin", "nitrofurantoin", "cefuroxime", "cephalexin"],
+    "antibiotic": ["amoxicillin", "augmentin", "azithromycin", "ciprofloxacin", "ofloxacin", "cefixime", "doxycycline", "clavulanate", "penicillin", "phexin", "clarithromycin", "nitrofurantoin", "cefuroxime", "cephalexin", "cefpodoxime"],
     "iron": ["ferrous", "iron", "folic", "autrin", "orofer"],
     "inhaler": ["budecort", "foracort", "asthalin", "seretide", "tiova", "fluticasone", "formoterol", "salbutamol", "rotacap", "budesonide", "tiotropium", "levosalbutamol"],
     "painkiller": ["paracetamol", "crocin", "ibuprofen", "combiflam", "tramadol", "aceclofenac", "diclofenac", "naproxen", "etoricoxib"],
-    "antacid": ["pantop", "pan", "omeprazole", "rabeprazole", "esomeprazole", "gelusil", "digene", "sucralfate"],
-    "eye": ["moxifloxacin", "ciprofloxacin", "tobramycin", "carboxymethylcellulose", "tears"],
-    "ear": ["ciprofloxacin with dexamethasone", "ear drops"],
+    "antacid": ["pantop", "pan", "omeprazole", "rabeprazole", "esomeprazole", "gelusil", "digene", "sucralfate", "pantoprazole"],
+    "eye drops": ["moxifloxacin", "ciprofloxacin", "tobramycin", "carboxymethylcellulose", "tears"],
+    "ear drops": ["ciprofloxacin with dexamethasone", "ear drops"],
 }
 
 
 def deduplicate_phrases(inst_list: List[str]) -> List[str]:
-    """Helper to clean duplicate/contained strings."""
-    filtered = []
-    for cand in inst_list:
-        if not cand or is_placeholder(cand):
-            continue
+    """Helper to clean duplicate/contained strings, prioritizing complete compound clauses."""
+    filtered: List[str] = []
+    sorted_candidates = sorted([c.strip() for c in inst_list if c and not is_placeholder(c)], key=len, reverse=True)
+    for cand in sorted_candidates:
         c_clean = cand.strip()
-        if any(c_clean.lower() != other.lower() and c_clean.lower() in other.lower() for other in inst_list):
+        if any(c_clean.lower() != other.lower() and c_clean.lower() in other.lower() for other in filtered):
             continue
         if c_clean not in filtered and c_clean.lower() not in [f.lower() for f in filtered]:
             filtered.append(c_clean)
@@ -219,8 +228,9 @@ def instruction_agent(state: AgenticRxState, llm: Any = None) -> Dict[str, Any]:
             has_dose_form = bool(re.search(r"(?i)(?:\d+\s*(?:mg|g|mcg|ml|iu|%)|\b(?:tablets?|capsules?|rotacaps?|vials?|sachets?|syrups?|gels?|drops?|sprays?|ointments?|creams?|lotions?)\b)", s_clean))
             is_med_sentence = (has_action and has_dose_form) or bool(re.search(MED_ACTION_VERB_START, s_clean))
             is_advice_sentence = bool(re.search(INDEPENDENT_ADVICE_START, s_clean))
+            is_freq_schedule_sentence = bool(re.search(r"(?i)\b(?:it\s+(?:should\s+be\s+taken|is\s+to\s+be\s+taken|must\s+be\s+taken|to\s+be\s+taken|is\s+taken)|take\s+(?:it|this(?:\s+medicine)?)|both(?:\s+of\s+them)?|all(?:\s+these|\s+of\s+them)?(?:\s+medicines|\s+drugs|\s+tablets)?|each(?:\s+of\s+them)?)\b", s_clean)) and bool(re.search(r"(?i)\b(?:\d+\s+times|once|twice|thrice|daily|every|at\s+bedtime|morning|night)\b", s_clean))
 
-            if not is_class_specific and not is_med_sentence and (is_advice_sentence or len(s_clean) >= 10):
+            if not is_class_specific and not is_med_sentence and not is_freq_schedule_sentence and (is_advice_sentence or len(s_clean) >= 10):
                 if not re.search(r"^\s*(?:Morning\s+Night|\d+\s*(?:mg|g|mcg|ml))\b", s_clean, re.IGNORECASE):
                     if s_clean and s_clean not in global_clinical_advice:
                         global_clinical_advice.append(s_clean)
@@ -317,8 +327,11 @@ def instruction_agent(state: AgenticRxState, llm: Any = None) -> Dict[str, Any]:
                     if re.search(rf"\b{re.escape(class_key)}\b", sent_lower) and (any(d in clause_lower for d in class_drugs) or (med_stem and any(d in med_stem for d in class_drugs))):
                         mentions_this_drug = True
 
+                # Check broadcast/plural coreference (e.g. "Both should be taken twice daily after meals")
+                is_broadcast_sent = bool(re.search(r"(?i)\b(?:both(?:\s+of\s+them|\s+medicines|\s+drugs|\s+tablets|\s+capsules)?|all(?:\s+these|\s+of\s+them)?(?:\s+medicines|\s+drugs|\s+tablets)?|each(?:\s+of\s+them)?)\s+(?:should\s+be\s+taken|are\s+to\s+be\s+taken|must\s+be\s+taken|to\s+be\s+taken|should\s+be\s+given|should\s+be|are|must\s+be)\b", sent))
+
                 # If sentence matches this drug or is generic unassigned advice in a 1-med prescription
-                if mentions_this_drug or (total_meds == 1 and not is_other_med):
+                if mentions_this_drug or is_broadcast_sent or (total_meds == 1 and not is_other_med):
                     is_sent_pure_advice = bool(re.search(INDEPENDENT_ADVICE_START, sent.strip())) or any(re.search(p, sent, re.IGNORECASE) for p in CONTINUOUS_ADVICE_SPAN_PATTERNS)
                     # Only check primary patterns if this is NOT a pure advice/lifestyle sentence
                     if not is_sent_pure_advice:

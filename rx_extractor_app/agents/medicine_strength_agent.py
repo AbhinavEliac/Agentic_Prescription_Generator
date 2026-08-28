@@ -90,7 +90,9 @@ def medicine_strength_agent(state: AgenticRxState, llm: Any = None) -> Dict[str,
                     cleaned_name = re.sub(FORM_PATTERN, "", raw_lead).strip()
                     cleaned_name = re.sub(ACTION_VERBS_PATTERN, "", cleaned_name).strip()
                     cleaned_name = re.sub(r"(?i)^(?:take|administer|give|start|prescribe|consume|dissolve|inhale|apply|put|instill|inject|infuse)\s+", "", cleaned_name).strip()
-                    cleaned_name = re.sub(r"\b(?:of|one|vial|sachet|orally|topically|by\s+mouth|inhale|apply|combination)\b", "", cleaned_name, flags=re.IGNORECASE).strip()
+                    cleaned_name = re.sub(r"(?i)^(?:of\s+|a\s+|an\s+|the\s+)", "", cleaned_name).strip()
+                    cleaned_name = re.sub(r"[\s,;\-]+$", "", cleaned_name).strip()
+                    cleaned_name = re.sub(r"\s*,\s*", " ", cleaned_name).strip()
                     
                     second_dose_txt = "NONE"
                     if len(doses) >= 2:
@@ -100,8 +102,9 @@ def medicine_strength_agent(state: AgenticRxState, llm: Any = None) -> Dict[str,
                             second_dose_txt = second_dose_cand.group(0).strip()
 
                     full_drug_name = f"{cleaned_name} {first_dose_txt}".strip()
-                    full_drug_name = re.sub(r"(?i)^(?:take\s+|administer\s+|give\s+|prescribe\s+|start\s+)?(?:\d+\s+|one\s+|two\s+|three\s+)?", "", full_drug_name).strip()
+                    full_drug_name = re.sub(r"(?i)^(?:take\s+|administer\s+|give\s+|prescribe\s+|start\s+)?(?:\d+\s+|one\s+|two\s+|three\s+)?(?:of\s+|a\s+|an\s+|the\s+)?", "", full_drug_name).strip()
                     full_drug_name = re.sub(r"(?i)\s+(?:orally|topically|by\s+mouth|inhale|apply|combination)$", "", full_drug_name).strip()
+                    full_drug_name = re.sub(r"[\s,;\-]+(?=\s+\d)", "", full_drug_name).strip()
                     full_drug_name = re.sub(r"\s+", " ", full_drug_name).strip()
 
                     extracted_meds.append({

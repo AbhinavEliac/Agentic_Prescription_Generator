@@ -134,6 +134,21 @@ with st.sidebar:
         st.rerun()
 
     st.divider()
+    st.subheader("🎙️ Speech-to-Text Engine")
+    stt_labels = list(config.STT_MODEL_OPTIONS.keys())
+    selected_stt_label = st.selectbox(
+        "STT Model",
+        stt_labels,
+        index=stt_labels.index(
+            st.session_state.get("stt_model_label", config.DEFAULT_STT_MODEL_LABEL)
+        ),
+        help="Select offline Speech-to-Text model. Can be switched dynamically for voice transcription!",
+        key="stt_model_selector_sb",
+    )
+    st.session_state.stt_model_label = selected_stt_label
+    st.session_state.stt_model_key = config.STT_MODEL_OPTIONS[selected_stt_label]
+
+    st.divider()
     st.subheader("🧵 Conversation Threads")
     all_threads = db.list_processes()
 
@@ -215,8 +230,22 @@ if is_current_active:
     if input_mode == "Text Input 📝":
         query = st.text_area("Text instruction", height=100, key="query_input")
     else:
-        st.markdown("##### 🎙️ Voice Input (Offline Whisper)")
-        audio_source = st.radio("Audio Source", ["Microphone 🎤", "Upload Audio File 📁"], horizontal=True, key="audio_source_select")
+        current_stt_label = st.session_state.get("stt_model_label", config.DEFAULT_STT_MODEL_LABEL)
+        current_stt_key = st.session_state.get("stt_model_key", config.STT_MODEL_OPTIONS[config.DEFAULT_STT_MODEL_LABEL])
+
+        st.markdown(f"##### 🎙️ Voice Input ({current_stt_label})")
+        st.caption(f"Active Speech-to-Text Engine: **{current_stt_label}** — Toggle anytime in sidebar or below.")
+
+        stt_col1, stt_col2 = st.columns([2, 1])
+        with stt_col1:
+            audio_source = st.radio("Audio Source", ["Microphone 🎤", "Upload Audio File 📁"], horizontal=True, key="audio_source_select")
+        with stt_col2:
+            stt_labels = list(config.STT_MODEL_OPTIONS.keys())
+            inline_stt = st.selectbox("Switch STT Model", stt_labels, index=stt_labels.index(current_stt_label), key="inline_stt_select")
+            if inline_stt != current_stt_label:
+                st.session_state.stt_model_label = inline_stt
+                st.session_state.stt_model_key = config.STT_MODEL_OPTIONS[inline_stt]
+                st.rerun()
 
         audio_buffer = None
         if audio_source == "Microphone 🎤":
@@ -225,34 +254,48 @@ if is_current_active:
             audio_buffer = st.file_uploader("Upload audio file (.wav, .mp3, .m4a, .ogg)", type=["wav", "mp3", "m4a", "ogg"], key="file_audio_input")
 
         if audio_buffer is not None:
-            audio_bytes = audio_buffer.getvalue() if hasattr(audio_buffer, "getvalue") else audio_buffer.read()
-            if hasattr(audio_buffer, "seek"):
-                audio_buffer.seek(0)
+            if hasattr(audio_buffer, "getvalue"):
+                audio_bytes = audio_buffer.getvalue()
+            else:
+                if hasattr(audio_buffer, "seek"):
+                    audio_buffer.seek(0)
+                audio_bytes = audio_buffer.read()
+                if hasattr(audio_buffer, "seek"):
+                    audio_buffer.seek(0)
 
-            import hashlib
-            audio_hash = hashlib.md5(audio_bytes).hexdigest()
+            if audio_bytes and len(audio_bytes) > 0:
+                import hashlib
+                audio_hash = hashlib.md5(audio_bytes).hexdigest() + "_" + str(current_stt_key)
 
-            if st.session_state.get("last_audio_hash") != audio_hash:
-                with st.spinner("Transcribing new audio with local Whisper model..."):
-                    try:
-                        import transcriber
-                        transcribed_text = transcriber.transcribe_audio(audio_bytes)
-                        st.session_state.voice_transcript = transcribed_text
-                        st.session_state.last_audio_hash = audio_hash
-                        st.session_state.active_audio_bytes = audio_bytes
-                        st.session_state["voice_query_input"] = transcribed_text
-                        if transcribed_text:
-                            st.success("✅ New Audio Transcribed Successfully!")
-                        else:
-                            st.warning("⚠️ No speech recognized in audio sample.")
-                    except Exception as ex:
-                        st.error(f"Whisper transcription error: {ex}")
-                        st.session_state.voice_transcript = ""
-                        st.session_state["voice_query_input"] = ""
+                # Only transcribe when this audio clip + STT model combo has not been transcribed yet
+                if st.session_state.get("last_transcribed_hash") != audio_hash:
+                    with st.spinner(f"Transcribing audio using {current_stt_label}..."):
+                        try:
+                            import transcriber
+                            transcribed_text = transcriber.transcribe_audio(audio_bytes, model_key=current_stt_key)
+                            st.session_state.voice_transcript = transcribed_text
+                            st.session_state.last_transcribed_hash = audio_hash
+                            st.session_state.active_audio_bytes = audio_bytes
+                            st.session_state["voice_query_input"] = transcribed_text
+                            if transcribed_text:
+                                st.success(f"✅ Audio Transcribed Successfully with {current_stt_label}!")
+                            else:
+                                st.warning("⚠️ No speech recognized in audio sample.")
+                        except Exception as ex:
+                            st.error(f"Speech transcription error with {current_stt_label}: {ex}")
+                            st.session_state.voice_transcript = ""
+                            st.session_state["voice_query_input"] = ""
 
-            query = st.text_area("Transcribed Text (Edit if needed)", value=st.session_state.get("voice_transcript", ""), height=100, key="voice_query_input")
+                # Allow user to manually force re-transcription with another STT engine if desired
+                re_trans_col1, re_trans_col2 = st.columns([4, 1])
+                with re_trans_col2:
+                    if st.button("🔄 Re-Transcribe", help="Force re-transcribe this audio with the selected STT model", use_container_width=True):
+                        st.session_state.pop("last_transcribed_hash", None)
+                        st.rerun()
+
+            query = st.text_area(f"Transcribed Text ({current_stt_label}) — Edit if needed", value=st.session_state.get("voice_transcript", ""), height=100, key="voice_query_input")
         else:
-            st.info("Record audio or upload an audio file above to transcribe.")
+            st.info(f"Record audio or upload an audio file above to transcribe using {current_stt_label}.")
 
     run_clicked = st.button("Run")
 

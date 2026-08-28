@@ -39,8 +39,9 @@ GENERAL_FREQUENCY_PATTERNS = [
 ]
 
 GENERAL_DURATION_PATTERNS = [
-    r"\b(?:for\s+|duration\s+of\s+|x\s*)(\d+\s*(?:days?|d|weeks?|wks?|months?|mo|years?|hrs?|hours?)|day\s+one|single\s+day|\d+\s*to\s*\d+\s*(?:days?|weeks?|months?)|no\s+more\s+than\s+\d+\s+days?)\b",
+    r"\b(?:for\s+|duration\s+of\s+|till\s+|until\s+|upto\s+|up\s+to\s+|for\s+upto\s+|for\s+up\s+to\s+|for\s+next\s+|next\s+|about\s+|around\s+|approx(?:\s+)?|for\s+around\s+|for\s+about\s+|x\s*)(\d+\s*(?:days?|d|weeks?|wks?|months?|mo|years?|hrs?|hours?)|day\s+one|single\s+day|\d+\s*to\s*\d+\s*(?:days?|weeks?|months?)|no\s+more\s+than\s+\d+\s+days?)\b",
     r"\b(until\s+[a-zA-Z\s]{3,30})\b",
+    r"\b(\d+\s*(?:days?|weeks?|months?))\b",
 ]
 
 
@@ -79,6 +80,34 @@ def duration_frequency_agent(state: AgenticRxState, llm: Any = None) -> Dict[str
     if not extracted_dur_freq:
         segments = segment_prescription(input_text)
 
+        # Check global plural/broadcast coreference (e.g. "Both should be taken twice daily", "All medicines are once daily")
+        global_plural_freq = "NONE"
+        global_plural_dur = "NONE"
+        plural_match = re.search(r"(?i)\b(?:both(?:\s+of\s+them|\s+medicines|\s+drugs|\s+tablets|\s+capsules)?|all(?:\s+these|\s+of\s+them)?(?:\s+medicines|\s+drugs|\s+tablets)?|each(?:\s+of\s+them)?)\s+(?:should\s+be\s+taken|are\s+to\s+be\s+taken|must\s+be\s+taken|to\s+be\s+taken|should\s+be\s+given|should\s+be|are|must\s+be)\s+([^,\.\n;!]+)", input_text)
+        if plural_match:
+            cand_p = plural_match.group(1).strip()
+            for fp in GENERAL_FREQUENCY_PATTERNS:
+                fm = re.search(fp, cand_p, re.IGNORECASE)
+                if fm:
+                    global_plural_freq = fm.group(0).strip()
+                    break
+            for dp in GENERAL_DURATION_PATTERNS:
+                dm = re.search(dp, input_text, re.IGNORECASE)
+                if dm:
+                    global_plural_dur = dm.group(1).strip()
+                    break
+
+        # Check singular coreference (e.g. "It should be taken 4 times a day", "This medicine is to be taken twice daily")
+        global_singular_freq = "NONE"
+        singular_match = re.search(r"(?i)\b(?:it\s+(?:should\s+be\s+taken|is\s+to\s+be\s+taken|must\s+be\s+taken|to\s+be\s+taken|is\s+taken)|take\s+(?:it|this(?:\s+medicine)?))\s+([^,\.\n;!]+)", input_text)
+        if singular_match:
+            cand_s = singular_match.group(1).strip()
+            for fp in GENERAL_FREQUENCY_PATTERNS:
+                fm = re.search(fp, cand_s, re.IGNORECASE)
+                if fm:
+                    global_singular_freq = fm.group(0).strip()
+                    break
+
         for s in segments:
             m_id = s["medicine_id"]
             clause = s["clause"]
@@ -103,6 +132,12 @@ def duration_frequency_agent(state: AgenticRxState, llm: Any = None) -> Dict[str
                         freq = matched_freq
                         break
 
+            if freq == "NONE":
+                if global_plural_freq != "NONE":
+                    freq = global_plural_freq
+                elif global_singular_freq != "NONE" and (len(segments) == 1 or m_id == len(segments)):
+                    freq = global_singular_freq
+
             # 2. Duration
             dur = "NONE"
             for dp in GENERAL_DURATION_PATTERNS:
@@ -110,6 +145,9 @@ def duration_frequency_agent(state: AgenticRxState, llm: Any = None) -> Dict[str
                 if d_match:
                     dur = d_match.group(1).strip()
                     break
+
+            if dur == "NONE" and global_plural_dur != "NONE":
+                dur = global_plural_dur
 
             extracted_dur_freq.append({
                 "medicine_id": m_id,

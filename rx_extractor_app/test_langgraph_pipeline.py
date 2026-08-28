@@ -332,7 +332,97 @@ def test_noisy_transcript_and_conversational_chatter_filtering():
     for p in parsed:
         assert not any(noise in p["Drug_name"].lower() for noise in ("good morning", "sharma", "fever", "vitals", "130/80", "thank you", "great day"))
     assert "gargle" in parsed[-1]["additional_instruction"].lower()
-    print("PASS: Conversational greetings, vitals, and sign-offs cleanly filtered out.")
+def test_single_med_hydration_and_visit_doctor_advice():
+    print("\n--- Test 15: Single Medicine with Hydration & Doctor Visit Advice ---")
+    raw_prescription = "Take Disprin 500 mg tablets. If the fever does not go away, come visit the doctor. Take regular water."
+    output, gen_time, agent_logs, blocks = run_graph_extraction(None, raw_prescription)
+    parsed = parse_output_fields(output, query=raw_prescription)
+    print(f"Extracted {len(parsed)} medicine blocks:")
+    for i, p in enumerate(parsed):
+        print(f"  {i+1}. {p['Drug_name']} | {p['route']} | {p['instruction']} | {p['additional_instruction']}")
+
+    assert len(parsed) == 1
+    assert "Disprin 500 mg" in parsed[0]["Drug_name"]
+    assert "oral" in parsed[0]["route"]
+    assert "visit the doctor" in parsed[0]["additional_instruction"].lower()
+    assert "regular water" in parsed[0]["additional_instruction"].lower()
+    print("PASS: Single medicine with hydration and doctor visit advice verified.")
+
+
+def test_cross_sentence_coreference_frequency_resolution():
+    print("\n--- Test 16: Cross-Sentence Coreference Frequency Resolution ---")
+    # 1. Singular coreference ("It should be taken 4 times a day")
+    raw_prescription_1 = "Take parasitamol 500 mg for 3 days. If the fever does not go away, come visit the doctor. It should be taken 4 times a day."
+    output_1, _, _, _ = run_graph_extraction(None, raw_prescription_1)
+    parsed_1 = parse_output_fields(output_1, query=raw_prescription_1)
+    assert len(parsed_1) == 1
+    assert "parasitamol 500 mg" in parsed_1[0]["Drug_name"]
+    assert "4 times a day" in parsed_1[0]["frequency"].lower()
+    assert "4 times a day" not in parsed_1[0]["additional_instruction"].lower()
+    assert "visit the doctor" in parsed_1[0]["additional_instruction"].lower()
+
+    # 2. Plural coreference ("Both should be taken twice daily after meals")
+    raw_prescription_2 = "Take Pan 40 mg and Paracetamol 650 mg for 5 days. Both should be taken twice daily after meals. Drink plenty of water."
+    output_2, _, _, _ = run_graph_extraction(None, raw_prescription_2)
+    parsed_2 = parse_output_fields(output_2, query=raw_prescription_2)
+    assert len(parsed_2) == 2
+    assert "twice daily" in parsed_2[0]["frequency"].lower()
+    assert "twice daily" in parsed_2[1]["frequency"].lower()
+    assert "after meals" in parsed_2[0]["instruction"].lower()
+    assert "after meals" in parsed_2[1]["instruction"].lower()
+    print("PASS: Singular and plural cross-sentence coreference frequencies verified.")
+
+
+def test_dosage_titration_instruction_capture():
+    print("\n--- Test 17: Dosage Titration Instruction Capture ---")
+    # 1. Unpunctuated speech with conditional titration
+    raw_1 = "Take parasitamol teplis 500 mg for 3 days if the fever does not go away increase the dosage by 100 mg"
+    output_1, _, _, _ = run_graph_extraction(None, raw_1)
+    parsed_1 = parse_output_fields(output_1, query=raw_1)
+    assert len(parsed_1) == 1
+    assert "parasitamol" in parsed_1[0]["Drug_name"].lower()
+    assert "increase the dosage by 100 mg" in parsed_1[0]["additional_instruction"].lower()
+    assert "if the fever does not go away" in parsed_1[0]["additional_instruction"].lower()
+
+    # 2. Punctuated speech with leading titration clause
+    raw_2 = "Take parasitamol tablets 500 mg for 3 days, increase the dosage by 100 mg if the fever does not go away."
+    output_2, _, _, _ = run_graph_extraction(None, raw_2)
+    parsed_2 = parse_output_fields(output_2, query=raw_2)
+    assert len(parsed_2) == 1
+    assert "increase the dosage by 100 mg" in parsed_2[0]["additional_instruction"].lower()
+    print("PASS: Dosage titration instructions cleanly captured without truncation.")
+
+
+def test_faulty_grammar_duration_and_comma_titration():
+    print("\n--- Test 18: Faulty Grammar Duration & Comma Titration ---")
+    raw = "Take parasita mode, tablets 500 mg, 3 times a day, till 7 days, if the fever does not go away, increase the dosage by 20 mgs."
+    output, _, _, _ = run_graph_extraction(None, raw)
+    parsed = parse_output_fields(output, query=raw)
+    assert len(parsed) == 1
+    assert "parasita mode 500 mg" in parsed[0]["Drug_name"]
+    assert "3 times a day" in parsed[0]["frequency"].lower()
+    assert "7 days" in parsed[0]["duration"].lower()
+    assert "oral" in parsed[0]["route"].lower()
+    assert "if the fever does not go away, increase the dosage by 20 mgs" in parsed[0]["additional_instruction"].lower()
+    print("PASS: Faulty grammar duration and unified comma titration instruction verified.")
+
+
+def test_complex_multidrug_with_nasal_irrigations_and_precautions():
+    print("\n--- Test 19: Complex Multi-Drug with Nasal Irrigations & Precautions ---")
+    raw = (
+        "Take one Cefpodoxime proxetil 200 mg tablet orally twice daily after meals for 7 days, and take one Levocetirizine 5 mg with Montelukast 10 mg tablet once daily at bedtime for 10 days. "
+        "Take one Paracetamol 650 mg tablet up to three times daily after food for pain or fever, take one Pantoprazole 40 mg tablet once daily before breakfast for 7 days, and administer two sprays of Oxymetazoline 0.05% nasal spray into each nostril twice daily for a strict maximum of 3 days. "
+        "Use saline nasal irrigations twice daily, perform steam inhalation, and seek reassessment if eye swelling or severe headaches develop."
+    )
+    output, _, _, _ = run_graph_extraction(None, raw)
+    parsed = parse_output_fields(output, query=raw)
+    assert len(parsed) == 6
+    assert "Oxymetazoline 0.05%" in parsed[-1]["Drug_name"]
+    assert "nasal" in parsed[-1]["route"]
+    assert "into each nostril" in parsed[-1]["instruction"].lower()
+    assert "saline nasal irrigations" in parsed[-1]["additional_instruction"].lower()
+    assert "strict maximum of 3 days" in parsed[-1]["additional_instruction"].lower()
+    print("PASS: Multi-drug with nasal irrigations and precautions cleanly extracted.")
 
 
 if __name__ == "__main__":
@@ -350,6 +440,11 @@ if __name__ == "__main__":
     test_punctuation_free_continuous_voice_speech()
     test_complex_multidrug_decimal_and_advice_guards()
     test_noisy_transcript_and_conversational_chatter_filtering()
+    test_single_med_hydration_and_visit_doctor_advice()
+    test_cross_sentence_coreference_frequency_resolution()
+    test_dosage_titration_instruction_capture()
+    test_faulty_grammar_duration_and_comma_titration()
+    test_complex_multidrug_with_nasal_irrigations_and_precautions()
     print("\n========================================================")
-    print("ALL 14 LANGGRAPH DRIFT-PROOF MULTI-AGENT TESTS PASSED!")
+    print("ALL 19 LANGGRAPH DRIFT-PROOF MULTI-AGENT TESTS PASSED!")
     print("========================================================")

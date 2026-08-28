@@ -32,7 +32,26 @@ MAX_TOKENS = 300
 TEMPERATURE = 0.0  # deterministic extraction -- important for medical data
 VERBOSE = False
 ALLOW_DOWNLOAD = True
-WHISPER_MODEL = "base"
+
+# ---------------------------------------------------------------------------
+# Speech-to-Text (STT) Multi-Model Options & Settings
+# ---------------------------------------------------------------------------
+STT_MODEL_OPTIONS = {
+    "Whisper Ayush (Fine-Tuned Turbo Rx v1)": "whisper_ayush",
+    "NVIDIA Canary 1B (High-Accuracy Multilingual)": "canary_1b",
+    "NVIDIA Parakeet TDT 1.1B (Ultra-Low Latency)": "parakeet_tdt",
+    "Useful Sensors Moonshine Base (Edge Device Optimized)": "moonshine_base",
+    "Useful Sensors Moonshine Tiny (Fastest Edge ASR)": "moonshine_tiny",
+    "OpenAI Whisper Large v3 Turbo": "whisper_large_turbo",
+    "OpenAI Whisper Base (Local Offline)": "whisper_base",
+    "OpenAI Whisper Tiny (Lightweight)": "whisper_tiny",
+}
+DEFAULT_STT_MODEL_LABEL = "Whisper Ayush (Fine-Tuned Turbo Rx v1)"
+WHISPER_MODEL = STT_MODEL_OPTIONS[DEFAULT_STT_MODEL_LABEL]
+
+AYUSH_WHISPER_PATH = os.path.join(os.path.dirname(BASE_DIR), "Whisper_Ayush", "Whisper large", "saved_models_whisper_large", "merged_turbo_rx_v1")
+if not os.path.exists(AYUSH_WHISPER_PATH):
+    AYUSH_WHISPER_PATH = os.path.join(BASE_DIR, "Whisper_Ayush", "Whisper large", "saved_models_whisper_large", "merged_turbo_rx_v1")
 
 # Choices offered in the Streamlit sidebar -> actual GPT4All device string
 DEVICE_OPTIONS = {"CPU": "cpu", "GPU (CUDA)": "cuda"}
