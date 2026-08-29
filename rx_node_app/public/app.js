@@ -291,6 +291,17 @@ async function toggleRecording() {
                     const latencyMs = Math.round(t1 - state.speechT0);
                     latencyBadge.textContent = `⚡ Latency: ${latencyMs}ms`;
                     state.speechT0 = performance.now();
+
+                    // ── Live Streaming Extraction as sentences complete ───────
+                    if (autoExtractToggle && autoExtractToggle.checked) {
+                        clearTimeout(state.streamingExtractTimer);
+                        state.streamingExtractTimer = setTimeout(() => {
+                            const fullTextSoFar = (state.speechFinalText || '').trim();
+                            if (fullTextSoFar && fullTextSoFar.length > 5 && fullTextSoFar !== state.lastExtractedText && !state.isExtracting) {
+                                runExtraction(fullTextSoFar);
+                            }
+                        }, 600);
+                    }
                 }
                 state.speechInterimText = interimTranscript;
 
@@ -449,6 +460,9 @@ async function toggleRecording() {
         cancelAnimationFrame(state.animFrameId);
         setupCanvas();
 
+        // Clean up streaming extraction timers
+        clearTimeout(state.streamingExtractTimer);
+
         // Finalize live text into record
         const liveText = (liveContent.textContent || '').trim();
         const finalText = (state.speechFinalText || state.speechInterimText || state.lastStreamingText || (liveText !== 'Dictation will stream here live as you speak...' ? liveText : '') || '').trim();
@@ -479,9 +493,10 @@ async function toggleRecording() {
             }, 1000);
         }
 
-        // Auto-extract EXACTLY ONCE on stop if toggle enabled
+        // Only run extraction if the table is still empty (streaming extraction didn't run yet)
         const autoExtractToggle = document.getElementById('auto-extract-toggle');
-        if (autoExtractToggle && autoExtractToggle.checked && finalText) {
+        const tableIsEmpty = !state.extractedRecords || state.extractedRecords.length === 0;
+        if (autoExtractToggle && autoExtractToggle.checked && finalText && tableIsEmpty && !state.isExtracting) {
             showToast('Auto-extracting prescription record...');
             runExtraction(finalText);
         }
@@ -626,7 +641,7 @@ async function transcribeAudio() {
 /**
  * Run LangGraph Multi-Agent Prescription Extraction
  */
-async function runExtraction(overrideText) {
+async function runExtraction(overrideText, force = false) {
     const text = (overrideText || document.getElementById('rx-input-text').value || '').trim();
     if (!text) {
         showToast('Please enter prescription text or transcribe audio first.');
@@ -638,7 +653,7 @@ async function runExtraction(overrideText) {
         return;
     }
 
-    if (text === state.lastExtractedText && state.extractedRecords && state.extractedRecords.length > 0) {
+    if (!force && text === state.lastExtractedText && state.extractedRecords && state.extractedRecords.length > 0) {
         console.log('[Extract] Text unchanged, skipping duplicate extraction');
         return;
     }

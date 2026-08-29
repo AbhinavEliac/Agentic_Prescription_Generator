@@ -130,7 +130,7 @@
                                 <div class="streaming-options-row">
                                     <label class="auto-extract-label">
                                         <input type="checkbox" id="auto-extract-toggle" checked>
-                                        <span>Auto-run LangGraph Extraction on stop</span>
+                                        <span>Live Streaming Auto-Extraction to Table</span>
                                     </label>
                                     <span id="streaming-status-note" class="status-msg">WebSocket: Standby</span>
                                 </div>
@@ -189,7 +189,7 @@
                             </div>
                         </div>
 
-                        <button id="run-extract-btn" class="btn btn-primary" onclick="runExtraction()">
+                        <button id="run-extract-btn" class="btn btn-primary" onclick="runExtraction(null, true)">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                             <span>Run LangGraph Extraction</span>
                         </button>
