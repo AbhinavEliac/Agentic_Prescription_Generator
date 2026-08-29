@@ -29,7 +29,9 @@ const state = {
     wsUrl: null,
     streamingChunksCount: 0,
     lastStreamingText: '',
-    autoExtractOnStop: true
+    autoExtractOnStop: true,
+    isExtracting: false,
+    lastExtractedText: ''
 };
 
 // Preset Clinical Samples
@@ -284,34 +286,22 @@ async function toggleRecording() {
                     }
                 }
 
-                // Accumulate committed final text
                 if (finalTranscript) {
                     state.speechFinalText += finalTranscript;
                     const latencyMs = Math.round(t1 - state.speechT0);
                     latencyBadge.textContent = `⚡ Latency: ${latencyMs}ms`;
                     state.speechT0 = performance.now();
-
-                    // Push finalized text into record input immediately
-                    rxInput.value = state.speechFinalText.trim();
-                    rxInput.dispatchEvent(new Event('input'));
-
-                    // Auto-extract when sentence is complete (isFinal fires per sentence)
-                    if (autoExtractToggle && autoExtractToggle.checked) {
-                        clearTimeout(state.autoExtractTimer);
-                        // Debounce 800ms to batch rapid final events into one extraction
-                        state.autoExtractTimer = setTimeout(() => {
-                            showToast('Auto-extracting prescription record...');
-                            runExtraction();
-                        }, 800);
-                    }
                 }
                 state.speechInterimText = interimTranscript;
 
-                // Show committed + live interim text in the HUD
-                const displayText = state.speechFinalText + interimTranscript;
+                // Show committed + live interim text in the HUD and sync to textarea
+                const displayText = (state.speechFinalText + interimTranscript).trim();
                 liveContent.textContent = displayText;
                 liveBox.scrollTop = liveBox.scrollHeight;
                 state.lastStreamingText = displayText;
+                if (displayText) {
+                    rxInput.value = displayText;
+                }
 
                 // VAD state from interim vs silence
                 if (interimTranscript.length > 0) {
@@ -345,7 +335,7 @@ async function toggleRecording() {
 
             rec.start();
 
-            // ── WebSocket Backend: PCM stream for accurate final Whisper pass ──
+            // ── WebSocket Backend: PCM stream for fallback Whisper pass ──
             try {
                 const sttModel = document.getElementById('stt-model-select').value;
                 const wsBase = await resolveStreamingWsUrl();
@@ -356,18 +346,19 @@ async function toggleRecording() {
                 state.ws.onmessage = (event) => {
                     try {
                         const data = JSON.parse(event.data);
-                        // Apply Whisper final result as a correction pass
+                        // Only use Whisper fallback IF Web Speech API captured NO speech
                         if (data.type === 'final' && data.punctuated_text) {
                             const whisperText = data.punctuated_text.trim();
-                            if (whisperText.length > 2) {
+                            latencyBadge.textContent = `⚡ Whisper Final: ${data.final_latency_ms}ms`;
+
+                            // If we already have accurate Web Speech text, DO NOT overwrite it!
+                            const hasWebSpeechText = (state.speechFinalText || state.speechInterimText || rxInput.value || '').trim().length > 0;
+                            if (!hasWebSpeechText && whisperText.length > 2) {
                                 rxInput.value = whisperText;
                                 liveContent.textContent = whisperText;
                                 state.lastStreamingText = whisperText;
-                                latencyBadge.textContent = `⚡ Whisper Final: ${data.final_latency_ms}ms`;
-
-                                // Auto-extract if table is empty
-                                if (autoExtractToggle && autoExtractToggle.checked && (!state.extractedRecords || state.extractedRecords.length === 0)) {
-                                    runExtraction();
+                                if (autoExtractToggle && autoExtractToggle.checked) {
+                                    runExtraction(whisperText);
                                 }
                             }
                         }
@@ -470,7 +461,7 @@ async function toggleRecording() {
         liveCursor.classList.add('hidden');
         vadBadge.textContent = '🎙️ VAD: Completed';
         vadBadge.classList.remove('active');
-        statusNote.textContent = 'WebSocket: Finalizing';
+        statusNote.textContent = 'Dictation Finished';
 
         // WAV preview from PCM buffers
         if (state.pcmBuffers && state.pcmBuffers.length > 0) {
@@ -480,7 +471,7 @@ async function toggleRecording() {
             document.getElementById('transcribe-btn').disabled = false;
         }
 
-        // Send finalize command over WebSocket
+        // Send finalize command over WebSocket for telemetry
         if (state.ws && state.ws.readyState === WebSocket.OPEN) {
             state.ws.send(JSON.stringify({ action: 'finalize' }));
             setTimeout(() => {
@@ -488,11 +479,11 @@ async function toggleRecording() {
             }, 1000);
         }
 
-        // Auto-extract on stop if toggle enabled
+        // Auto-extract EXACTLY ONCE on stop if toggle enabled
         const autoExtractToggle = document.getElementById('auto-extract-toggle');
         if (autoExtractToggle && autoExtractToggle.checked && finalText) {
             showToast('Auto-extracting prescription record...');
-            setTimeout(() => runExtraction(), 300);
+            runExtraction(finalText);
         }
     }
 }
@@ -635,13 +626,24 @@ async function transcribeAudio() {
 /**
  * Run LangGraph Multi-Agent Prescription Extraction
  */
-async function runExtraction() {
-    const text = document.getElementById('rx-input-text').value.trim();
+async function runExtraction(overrideText) {
+    const text = (overrideText || document.getElementById('rx-input-text').value || '').trim();
     if (!text) {
         showToast('Please enter prescription text or transcribe audio first.');
         return;
     }
 
+    if (state.isExtracting) {
+        console.log('[Extract] Extraction already running, ignoring duplicate request');
+        return;
+    }
+
+    if (text === state.lastExtractedText && state.extractedRecords && state.extractedRecords.length > 0) {
+        console.log('[Extract] Text unchanged, skipping duplicate extraction');
+        return;
+    }
+
+    state.isExtracting = true;
     const runBtn = document.getElementById('run-extract-btn');
     const pipeline = document.getElementById('progress-pipeline');
     const llmModel = document.getElementById('llm-model-select').value;
@@ -666,6 +668,7 @@ async function runExtraction() {
         const data = await res.json();
         if (data.success) {
             state.extractedRecords = data.parsed_records || [];
+            state.lastExtractedText = text;
             renderTable(state.extractedRecords);
             document.getElementById('metric-meds').innerHTML = `<strong>${data.total_medicines}</strong> Medications`;
             document.getElementById('metric-latency').innerHTML = `<strong>${data.generation_time}s</strong> Latency`;
@@ -676,6 +679,7 @@ async function runExtraction() {
     } catch (err) {
         showToast('API Gateway error: ' + err.message);
     } finally {
+        state.isExtracting = false;
         runBtn.disabled = false;
         completePipeline();
     }
