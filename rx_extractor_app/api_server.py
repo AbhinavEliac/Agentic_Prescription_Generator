@@ -313,19 +313,15 @@ async def websocket_transcribe(websocket: WebSocket):
                     streamer.reset()
                     await websocket.send_text(json.dumps({"type": "reset", "status": "cleared"}))
 
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, RuntimeError):
         print("[WS] Client disconnected cleanly.")
     except Exception as e:
         print(f"[WS] WebSocket error: {e}")
+    finally:
         try:
-            await websocket.send_text(json.dumps({"type": "error", "message": str(e)}))
+            await websocket.close()
         except Exception:
             pass
-        finally:
-            try:
-                await websocket.close()
-            except Exception:
-                pass
 
 
 if __name__ == "__main__":
