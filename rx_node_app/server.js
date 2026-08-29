@@ -52,6 +52,16 @@ app.get('/api/status', async (req, res) => {
     res.status(result.status).json(result.data);
 });
 
+// Streaming WebSocket configuration endpoint
+app.get('/api/streaming-config', (req, res) => {
+    const pyHost = PYTHON_API_BASE.replace(/^http/, 'ws');
+    res.json({
+        ws_url: process.env.WS_STREAM_URL || `${pyHost}/ws/transcribe`,
+        python_api_base: PYTHON_API_BASE,
+        streaming_enabled: true
+    });
+});
+
 // Models List
 app.get('/api/models', async (req, res) => {
     const result = await proxyToPython('/api/models');
