@@ -356,15 +356,19 @@ async function toggleRecording() {
                 state.ws.onmessage = (event) => {
                     try {
                         const data = JSON.parse(event.data);
-                        // Only apply Whisper final result as a correction pass
+                        // Apply Whisper final result as a correction pass
                         if (data.type === 'final' && data.punctuated_text) {
-                            // Only override if Whisper result is longer / more accurate
                             const whisperText = data.punctuated_text.trim();
-                            if (whisperText.length > (state.speechFinalText || '').trim().length * 0.5) {
+                            if (whisperText.length > 2) {
                                 rxInput.value = whisperText;
                                 liveContent.textContent = whisperText;
                                 state.lastStreamingText = whisperText;
                                 latencyBadge.textContent = `⚡ Whisper Final: ${data.final_latency_ms}ms`;
+
+                                // Auto-extract if table is empty
+                                if (autoExtractToggle && autoExtractToggle.checked && (!state.extractedRecords || state.extractedRecords.length === 0)) {
+                                    runExtraction();
+                                }
                             }
                         }
                     } catch(e) {}
@@ -455,7 +459,8 @@ async function toggleRecording() {
         setupCanvas();
 
         // Finalize live text into record
-        const finalText = (state.speechFinalText || state.lastStreamingText || '').trim();
+        const liveText = (liveContent.textContent || '').trim();
+        const finalText = (state.speechFinalText || state.speechInterimText || state.lastStreamingText || (liveText !== 'Dictation will stream here live as you speak...' ? liveText : '') || '').trim();
         if (finalText) {
             rxInput.value = finalText;
             liveContent.textContent = finalText;
@@ -465,7 +470,7 @@ async function toggleRecording() {
         liveCursor.classList.add('hidden');
         vadBadge.textContent = '🎙️ VAD: Completed';
         vadBadge.classList.remove('active');
-        statusNote.textContent = 'WebSocket: Closed';
+        statusNote.textContent = 'WebSocket: Finalizing';
 
         // WAV preview from PCM buffers
         if (state.pcmBuffers && state.pcmBuffers.length > 0) {
@@ -475,19 +480,19 @@ async function toggleRecording() {
             document.getElementById('transcribe-btn').disabled = false;
         }
 
-        // Finalize Whisper backend pass
+        // Send finalize command over WebSocket
         if (state.ws && state.ws.readyState === WebSocket.OPEN) {
             state.ws.send(JSON.stringify({ action: 'finalize' }));
             setTimeout(() => {
                 if (state.ws && state.ws.readyState === WebSocket.OPEN) state.ws.close();
-            }, 2000);
+            }, 1000);
         }
 
         // Auto-extract on stop if toggle enabled
         const autoExtractToggle = document.getElementById('auto-extract-toggle');
         if (autoExtractToggle && autoExtractToggle.checked && finalText) {
             showToast('Auto-extracting prescription record...');
-            setTimeout(() => runExtraction(), 400);
+            setTimeout(() => runExtraction(), 300);
         }
     }
 }

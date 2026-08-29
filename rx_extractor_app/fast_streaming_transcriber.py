@@ -114,13 +114,34 @@ _DRUG_CORRECTIONS = {
 }
 
 
+# Known Whisper silence hallucinations to filter out
+_SILENCE_HALLUCINATIONS = {
+    "thank you.", "thank you", "thanks for watching.", "thanks for watching",
+    "thank you for watching.", "thank you for watching", "please subscribe",
+    "subtitles by", "translated by", "you", "goodbye.", "bye.",
+}
+
+
+def _clean_hallucinations(text: str) -> str:
+    """Removes common Whisper phantom hallucinations during silence or background noise."""
+    if not text:
+        return ""
+    cleaned = text.strip()
+    if cleaned.lower() in _SILENCE_HALLUCINATIONS:
+        return ""
+    if cleaned.lower().startswith("for more information, visit"):
+        return ""
+    return cleaned
+
+
 def _medical_spell_correct(text: str) -> str:
     """
     Fast word-level spell correction for common Whisper tiny drug-name manglings.
     Uses exact lowercase match first, then optional fuzzy fallback.
     """
+    text = _clean_hallucinations(text)
     if not text:
-        return text
+        return ""
     words = text.split()
     corrected = []
     for word in words:
@@ -165,6 +186,7 @@ def _transcribe_pcm(audio_np: np.ndarray, sample_rate: int = 16000,
     except Exception as e:
         logger.warning(f"Transcribe error: {e}")
         return ""
+
 
 
 
@@ -271,37 +293,13 @@ class FastLiveTranscriber:
         if len(self.audio_buffer) == 0:
             return {"type": "final", "raw_text": "", "punctuated_text": "", "duration": 0.0, "final_latency_ms": 0.0}
 
-        # ── Final pass: try Whisper Ayush (fine-tuned prescription model) first ──
-        # This gives the highest accuracy for drug names like Cefpodoxime, Levocetirizine etc.
-        final_text = ""
-        used_model = "whisper_tiny"
-        try:
-            import io
-            import soundfile as sf
-            import transcriber as tr
-
-            # Export full buffer as WAV for Ayush model
-            bio = io.BytesIO()
-            sf.write(bio, self.audio_buffer, self.sample_rate, format="WAV", subtype="PCM_16")
-            wav_bytes = bio.getvalue()
-
-            ayush_result = tr.transcribe_audio(wav_bytes, model_key="whisper_ayush")
-            if ayush_result and len(ayush_result.strip()) > 2:
-                final_text = _medical_spell_correct(ayush_result.strip())
-                used_model = "whisper_ayush"
-                logger.info(f"[FastASR] Final pass via Whisper Ayush: '{final_text[:60]}'")
-        except Exception as e:
-            logger.warning(f"[FastASR] Whisper Ayush final pass failed ({e}), falling back to tiny+prompt")
-
-        # ── Fallback: Whisper tiny with medical prompt + spell correction ──
-        if not final_text:
-            final_text = _transcribe_pcm(self.audio_buffer, self.sample_rate, use_medical_prompt=True)
-            used_model = "whisper_tiny_gpu" if _USE_GPU else "whisper_tiny_cpu"
-
+        # Fast GPU transcription on full buffer with medical prompt
+        final_text = _transcribe_pcm(self.audio_buffer, self.sample_rate, use_medical_prompt=True)
         if not final_text:
             final_text = (self.committed_text + " " + self.current_partial).strip()
+        final_text = _clean_hallucinations(final_text)
 
-        # ── Punctuation correction ──
+        # Sentence punctuation
         try:
             from agents.punctuation_agent import correct_sentence_punctuation
             punctuated = correct_sentence_punctuation(final_text)
@@ -309,14 +307,15 @@ class FastLiveTranscriber:
             punctuated = final_text
 
         latency_ms = round((time.perf_counter() - t0) * 1000, 1)
-        logger.info(f"[FastASR] Finalized via {used_model}: '{punctuated}' ({latency_ms}ms)")
+        device_tag = "GPU" if _USE_GPU else "CPU"
+        logger.info(f"[FastASR/{device_tag}] Finalized: '{punctuated}' ({latency_ms}ms)")
         return {
             "type": "final",
             "raw_text": final_text,
             "punctuated_text": punctuated,
             "duration": round(self.total_received_s, 2),
             "final_latency_ms": latency_ms,
-            "model_used": used_model,
+            "model_used": "whisper_tiny_gpu" if _USE_GPU else "whisper_tiny_cpu",
         }
 
     def reset(self):
