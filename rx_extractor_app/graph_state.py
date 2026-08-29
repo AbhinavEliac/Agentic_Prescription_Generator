@@ -51,7 +51,9 @@ class ValidationFeedback(TypedDict, total=False):
 
 
 class AgenticRxState(TypedDict, total=False):
-    # Prescription input
+    # Prescription input & sentence punctuation
+    raw_input_text: str
+    punctuated_text: str
     input_text: str
     system_prompt: Optional[str]
 

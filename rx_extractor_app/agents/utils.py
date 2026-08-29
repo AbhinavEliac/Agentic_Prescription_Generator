@@ -190,57 +190,40 @@ def safe_parse_json(text: str) -> Optional[Any]:
 def segment_prescription(input_text: str) -> List[Dict[str, Any]]:
     """
     Robustly segments multi-medicine prescriptions into discrete clauses.
-    Recognizes all transition points, companion drugs, and filters non-drug advice sentences.
-    Works seamlessly with or without punctuation.
+    Recognizes all transition points, companion drugs, and groups per-medicine advice clauses.
     """
     clean_text = clean_noise_and_chatter(input_text)
     clean_text = re.sub(r"(\d+),(\d+)", r"\1\2", clean_text)
-    # Bridge schedule/duration clauses split across periods (e.g. "capsule. Once daily for 14 days, take...")
     clean_text = re.sub(r"\.\s*((?:Once|Twice|Thrice|\d+\s+times|Every|Daily|At\s+bedtime|In\s+the\s+morning)[^\.,;]+?),\s*(take|administer|give|start|apply|inhale|instill)", r" \1. \2", clean_text, flags=re.IGNORECASE)
 
-    # 1. Break into sentences by standard sentence punctuation (decimal-safe)
     raw_sentences = [s.strip() for s in re.split(r"(?<!\d)\.(?!\d)|[\n;!]", clean_text) if s.strip()]
 
-    # 2. Split intra-sentence transition points (e.g. "Take A, and take B, also start C")
     split_pattern = (
-        r"(?i)(?:,\s*(?:and\s+take|also\s+take|additionally(?:,\s*take)?|then\s+take|take\s+one|take\s+two|take\s+10\s*ml|take\s+\d+|take\s+(?!(?:walks?|a\s+walk|rest|care|steam|bath|water|regular\s+water|warm\s+water|cold\s+water|fluids?|food|meals?))\b|"
-        r"and\s+start|also\s+start|start\s+one|start|"
-        r"and\s+administer|also\s+administer|administer\s+one|administer\s+two|administer|"
-        r"and\s+give|also\s+give|give\s+one|give|"
-        r"and\s+consume|also\s+consume|consume\s+one|consume|"
-        r"and\s+dissolve|also\s+dissolve|dissolve\s+one|dissolve|slowly\s+dissolve|"
-        r"and\s+inhale|also\s+inhale|inhale\s+one|inhale\s+two|inhale|"
-        r"and\s+apply|also\s+apply|apply\s+a\s+thin|apply\s+a\s+pea-sized|apply\s+a\s+dab|apply\s+broad-spectrum|apply\s+one|apply|"
-        r"and\s+gently\s+massage|gently\s+massage|and\s+massage|massage|"
-        r"and\s+rub|also\s+rub|rub\s+one|rub|"
-        r"and\s+spray|also\s+spray|spray\s+one|spray|"
-        r"and\s+instill|also\s+instill|instill\s+two|instill\s+three|instill\s+one|instill|"
-        r"and\s+cleanse|cleanse\s+the\s+skin|cleanse|"
-        r"and\s+put|also\s+put|put\s+one|put|inject\s+one|inject|infuse\s+one|infuse)|"
-        r"\band\s+take\s+\d+\b|\band\s+take\s+(?!(?:walks?|a\s+walk|rest|care|steam|bath|water|regular\s+water|warm\s+water|cold\s+water|fluids?|food|meals?))\b|"
-        r"\balso\s+take\s+(?!(?:walks?|a\s+walk|rest|care|steam|bath|water|regular\s+water|warm\s+water|cold\s+water|fluids?|food|meals?))\b|"
-        r"\badditionally\b|\bthen\s+take\b|"
-        r"\band\s+start\b|\band\s+administer\b|\band\s+consume\b|\band\s+dissolve\b|\band\s+spray\b|\band\s+instill\b|\binhale\s+one\b|\binhale\s+two\b|\bapply\s+one\b|\bapply\s+a\b|"
+        r"(?i)(?:,\s*(?:and\s+|also\s+|additionally\s+|then\s+)?(?:take|start|administer|give|consume|dissolve|inhale|apply|gently\s+massage|massage|rub|spray|instill|cleanse|put|inject|infuse)\b|"
+        r"\band\s+take\s+\d+\b|\band\s+take\s+(?!(?:walks?|a\s+walk|rest|care|steam|bath|water|regular\s+water|warm\s+water|cold\s+water|fluids?|food|meals?|all\s+the\s+medicines))\w+|"
+        r"\balso\s+take\s+(?!(?:walks?|a\s+walk|rest|care|steam|bath|water|regular\s+water|warm\s+water|cold\s+water|fluids?|food|meals?))\w+|"
+        r"\bthen\s+take\b|"
+        r"\band\s+start\b|\band\s+administer\b|\band\s+consume\b|\band\s+dissolve\b|\band\s+spray\b|\band\s+instill\b|\binhale\s+one\b|\binhale\s+two\b|\bapply\s+one\b|"
         r"\bkeep\s+the\s+blistered\s+area\b|\bavoid\s+close\s+physical\s+contact\b|\breturn\s+if\s+the\s+rash\b)"
     )
 
     clauses: List[str] = []
     for sent in raw_sentences:
-        sub_clauses = [c.strip() for c in re.split(split_pattern, sent) if c.strip()]
-        clauses.extend(sub_clauses if sub_clauses else [sent])
+        sent_clean = re.sub(r"^(?:additionally|also)\s*,\s*", "", sent, flags=re.IGNORECASE)
+        sub_clauses = [c.strip() for c in re.split(split_pattern, sent_clean) if c.strip()]
+        clauses.extend(sub_clauses if sub_clauses else [sent_clean])
 
     if not clauses:
         clauses = [clean_text]
 
-    segments: List[Dict[str, Any]] = []
-    med_id = 1
-
     # Non-drug trigger keywords that indicate a clause is advice/follow-up, not a medicine
     PURE_ADVICE_TRIGGERS = [
+        r"^(?:take\s+all(?:\s+the)?\s+medicines|take\s+both(?:\s+of\s+them)?)\b",
         r"^(?:return|come\s+back|follow\s+up|review|get\s+reassessed|seek|consult|contact|report|visit|revisit|arrange|schedule|repeat|re-?test)\b",
         r"^(?:meet\s+(?:the\s+)?doctor|please\s+see\s+me|see\s+(?:your\s+|the\s+)?doctor|come\s+(?:and\s+)?visit\s+(?:the\s+|your\s+)?doctor|visit\s+(?:the\s+|your\s+)?doctor)\b",
         r"^(?:do\s+not|avoid|strictly\s+avoid|discontinue|stop|keep|maintain|stick\s+to|include|limit|practice|brush|perform)\b",
-        r"^(?:drink|consume|stay\s+well-hydrated|apply\s+local|apply\s+ice|sponge|wear|monitor|be\s+sure\s+to|if\s+)\b",
+        r"^(?:drink|stay\s+well-hydrated|apply\s+local|apply\s+ice|sponge|wear|monitor|be\s+sure\s+to|if\s+)\b",
+        r"^(?:consume\s+(?:plenty|clean|regular|warm|fluids?|water|food|meals?))\b",
         r"^(?:take\s+(?:regular\s+|warm\s+|cold\s+|plenty\s+of\s+|sufficient\s+|clean\s+)?(?:water|fluids?))\b",
         r"(?:also\s+)?take\s+walks?",
         r"go\s+for\s+(?:morning\s+)?walks?",
@@ -258,56 +241,61 @@ def segment_prescription(input_text: str) -> List[Dict[str, Any]]:
         "pregnant", "individuals", "persons", "children", "people"
     )
 
+    segments: List[Dict[str, Any]] = []
+    med_id = 1
+
     for clause in clauses:
         clause_clean = clause.strip()
-        # If this clause is purely advice without medication, skip creating a medicine block
         is_advice = any(re.search(pat, clause_clean, re.IGNORECASE) for pat in PURE_ADVICE_TRIGGERS)
         if is_advice:
+            if segments:
+                segments[-1].setdefault("advice_clauses", []).append(clause_clean)
             continue
 
         # Check if the clause has any medication indicator (action verb, dosage, or form word)
         has_med_indicator = bool(
-            re.search(r"(?i)(?:\b(?:take\s+(?!(?:walks?|rest|care|steam|water|regular\s+water|warm\s+water|cold\s+water|fluids?))\w+|administer|give|prescribe|start|consume|dissolve|inhale|apply|put|instill|inject|infuse|tablet|tab|capsule|cap|rotacap|vial|sachet|syrup|gel|drops?|spray|ointment|cream|lotion)\b|\d+\s*(?:mg|g|mcg|ml|iu|%)\b)", clause_clean)
+            re.search(r"(?i)(?:\b(?:take\s+(?!(?:walks?|rest|care|steam|water|regular\s+water|warm\s+water|cold\s+water|fluids?|all\s+the\s+medicines|all\s+medicines))\w+|administer|give|prescribe|start|consume|dissolve|inhale|apply|put|instill|inject|infuse|tablet|tab|capsule|cap|rotacap|vial|sachet|syrup|gel|drops?|spray|ointment|cream|lotion)\b|\d+\s*(?:mg|g|mcg|ml|iu|%)\b|\bfor\s+\d+\s+days\b|\btill\s+\d+\s+days\b|\bfor\s+\d+\s+weeks\b)", clause_clean)
         )
-        if not has_med_indicator and len(segments) > 0:
+        if not has_med_indicator:
+            if segments:
+                segments[-1].setdefault("advice_clauses", []).append(clause_clean)
             continue
 
-        # Check companion drug "combination of A and B", "Take A and B [dose]", or "A with B [dose]"
-        # 1. "combination tablet/of A and B" or "Take A and B [dose]"
+        # Companion drug checks
         comb_match = re.search(r"(?:combination\s+(?:tablet\s+of\s+|of\s+)?|take\s+|administer\s+|give\s+)?([A-Za-z0-9\s\.\-]+?\d+(?:\.\d+)?\s*(?:mg|g|mcg|ml|IU))\s+and\s+([A-Za-z0-9\s\.\-]+?\d+(?:\.\d+)?\s*(?:mg|g|mcg|ml|IU)?)", clause_clean, re.IGNORECASE)
         if comb_match:
             d1_raw = comb_match.group(1).strip()
             d2_raw = comb_match.group(2).strip()
             d1 = re.split(r"(?i)\b(?:once|twice|thrice|daily|od|bd|tid|qid|for|after|before|every)\b", d1_raw)[0].strip()
             d2 = re.split(r"(?i)\b(?:once|twice|thrice|daily|od|bd|tid|qid|for|after|before|every)\b", d2_raw)[0].strip()
-            segments.append({"medicine_id": med_id, "clause": clause_clean, "seed_name": d1})
+            segments.append({"medicine_id": med_id, "clause": clause_clean, "seed_name": d1, "advice_clauses": []})
             med_id += 1
-            segments.append({"medicine_id": med_id, "clause": clause_clean, "seed_name": d2})
+            segments.append({"medicine_id": med_id, "clause": clause_clean, "seed_name": d2, "advice_clauses": []})
             med_id += 1
             continue
 
-        # 2. "A with B [dose]"
         comp_match = re.search(r"([A-Za-z0-9\s\.\-]+?)\s+with\s+([A-Za-z0-9\s\.\-]+)", clause_clean, re.IGNORECASE)
         if comp_match:
             d1_raw = comp_match.group(1).strip()
             d2_raw = comp_match.group(2).strip()
             d2_first_word = d2_raw.split()[0].lower() if d2_raw else ""
-            has_dose_or_form = bool(re.search(r"(?i)\d+(?:\.\d+)?\s*(?:mg|g|mcg|ml|iu|%)|\b(?:tablets?|capsules?|gel|lotion|drops?|solution|cream|ointment)\b", d2_raw))
-            if d2_first_word not in NON_DRUG_WITH and len(d2_first_word) >= 3 and has_dose_or_form:
+            has_dose_or_form_1 = bool(re.search(r"(?i)\d+(?:\.\d+)?\s*(?:mg|g|mcg|ml|iu|%)|\b(?:tablets?|capsules?|gel|lotion|drops?|solution|cream|ointment)\b", d1_raw))
+            has_dose_or_form_2 = bool(re.search(r"(?i)\d+(?:\.\d+)?\s*(?:mg|g|mcg|ml|iu|%)|\b(?:tablets?|capsules?|gel|lotion|drops?|solution|cream|ointment)\b", d2_raw))
+            if d2_first_word not in NON_DRUG_WITH and len(d2_first_word) >= 3 and has_dose_or_form_1 and has_dose_or_form_2:
                 d1 = re.split(r"(?i)\b(?:once|twice|thrice|three\s+times|four\s+times|daily|od|bd|tid|qid|for|after|before|every)\b", d1_raw)[0].strip()
                 d2 = re.split(r"(?i)\b(?:locally|once|twice|thrice|three\s+times|four\s+times|daily|od|bd|tid|qid|for|after|before|every|without|using|at|into|in|on|to|along|over|around|strictly|ensuring|diluted|dissolved|mixed|slowly)\b", d2_raw)[0].strip()
-                segments.append({"medicine_id": med_id, "clause": clause_clean, "seed_name": d1})
+                segments.append({"medicine_id": med_id, "clause": clause_clean, "seed_name": d1, "advice_clauses": []})
                 med_id += 1
-                segments.append({"medicine_id": med_id, "clause": clause_clean, "seed_name": d2})
+                segments.append({"medicine_id": med_id, "clause": clause_clean, "seed_name": d2, "advice_clauses": []})
                 med_id += 1
             else:
-                segments.append({"medicine_id": med_id, "clause": clause_clean, "seed_name": ""})
+                segments.append({"medicine_id": med_id, "clause": clause_clean, "seed_name": "", "advice_clauses": []})
                 med_id += 1
         else:
-            segments.append({"medicine_id": med_id, "clause": clause_clean, "seed_name": ""})
+            segments.append({"medicine_id": med_id, "clause": clause_clean, "seed_name": "", "advice_clauses": []})
             med_id += 1
 
     if not segments:
-        segments.append({"medicine_id": 1, "clause": clean_text, "seed_name": ""})
+        segments.append({"medicine_id": 1, "clause": clean_text, "seed_name": "", "advice_clauses": []})
 
     return segments

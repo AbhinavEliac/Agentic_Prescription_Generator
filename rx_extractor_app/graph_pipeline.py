@@ -14,6 +14,7 @@ from typing import Tuple, Dict, Any, List
 
 from graph_state import AgenticRxState
 from agents import (
+    punctuation_agent,
     supervisor_node,
     medicine_strength_agent,
     route_agent,
@@ -33,6 +34,7 @@ def _build_langgraph(llm: Any = None):
         builder = StateGraph(AgenticRxState)
 
         # 1. Register Nodes
+        builder.add_node("punctuation_agent", lambda state: punctuation_agent(state, llm))
         builder.add_node("supervisor", lambda state: supervisor_node(state, llm))
         builder.add_node("medicine_agent", lambda state: medicine_strength_agent(state, llm))
         builder.add_node("route_agent", lambda state: route_agent(state, llm))
@@ -43,7 +45,8 @@ def _build_langgraph(llm: Any = None):
         builder.add_node("formatter", lambda state: formatter_node(state, llm))
 
         # 2. Add Flow Edges
-        builder.add_edge(START, "supervisor")
+        builder.add_edge(START, "punctuation_agent")
+        builder.add_edge("punctuation_agent", "supervisor")
 
         # Fan-out to parallel extraction agents
         builder.add_edge("supervisor", "medicine_agent")
@@ -94,6 +97,7 @@ def run_graph_extraction(llm: Any, input_text: str) -> Tuple[str, float, List[Di
     """
     clean_input = input_text.strip().strip('"').strip("'").strip()
     initial_state: AgenticRxState = {
+        "raw_input_text": clean_input,
         "input_text": clean_input,
         "iteration_count": 0,
         "agent_logs": [],
@@ -126,6 +130,10 @@ def run_graph_extraction(llm: Any, input_text: str) -> Tuple[str, float, List[Di
 def _execute_flow_manually(llm: Any, initial_state: AgenticRxState) -> AgenticRxState:
     """Sequential direct execution of the multi-agent graph flow with loop cap."""
     state = dict(initial_state)
+
+    # 0. Sentence Punctuation Correction Agent (runs first on raw transcript)
+    punct_out = punctuation_agent(state, llm)
+    state.update(punct_out)
 
     while True:
         # 1. Supervisor

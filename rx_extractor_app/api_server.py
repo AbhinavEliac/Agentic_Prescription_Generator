@@ -8,10 +8,13 @@ import os
 import io
 import time
 import datetime
+import threading
+from contextlib import asynccontextmanager
 from typing import Optional, List, Dict, Any
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import json
 
 import config
 import db
@@ -21,14 +24,26 @@ import exporter
 import transcriber
 from graph_pipeline import run_graph_extraction
 from exporter import parse_output_fields
+from fast_streaming_transcriber import FastLiveTranscriber, _get_whisper_model
 
 # Initialize database
 db.init_db()
+
+
+@asynccontextmanager
+async def lifespan(app_instance):
+    """Pre-warm the whisper tiny model on server startup to eliminate cold-start latency."""
+    print("[Startup] Pre-warming whisper tiny model for sub-second streaming...")
+    threading.Thread(target=_get_whisper_model, args=("tiny",), daemon=True).start()
+    yield
+    print("[Shutdown] FastAPI server shutting down.")
+
 
 app = FastAPI(
     title="Agentic Prescription Extractor API",
     description="REST API bridging LangGraph Multi-Agent Architecture and Multi-Engine STT to parallel Node.js applications.",
     version="2.0.0",
+    lifespan=lifespan,
 )
 
 # Enable CORS for local Node.js app (Port 3000 / 5173 / any origin)
@@ -245,6 +260,76 @@ def create_thread(req: ThreadCreateRequest):
     }
 
 
+@app.websocket("/ws/transcribe")
+async def websocket_transcribe(websocket: WebSocket):
+    """
+    Bidirectional WebSocket endpoint for sub-second streaming audio transcription.
+    Accepts raw PCM16 mono audio frames from Web Audio API.
+    Uses FastLiveTranscriber (whisper tiny, ~200-400ms CPU latency).
+    Emits real-time partial JSON updates and finalized punctuated results.
+    """
+    await websocket.accept()
+    stt_model = websocket.query_params.get("stt_model") or "whisper_ayush"
+    try:
+        sample_rate = int(websocket.query_params.get("sample_rate", 16000))
+    except Exception:
+        sample_rate = 16000
+
+    # Use FastLiveTranscriber (whisper tiny) for sub-second latency
+    streamer = FastLiveTranscriber(sample_rate=sample_rate, model_key=stt_model)
+    print(f"[WS] Client connected. FastASR engine | Sample Rate: {sample_rate}Hz")
+
+    # Send connection acknowledgment
+    await websocket.send_text(json.dumps({
+        "type": "connected",
+        "stt_model": "whisper_tiny_fast",
+        "sample_rate": sample_rate,
+        "status": "ready"
+    }))
+
+    try:
+        while True:
+            message = await websocket.receive()
+            
+            # Handle binary audio frame (PCM16 raw samples from Web Audio API)
+            if "bytes" in message and message["bytes"]:
+                audio_bytes = message["bytes"]
+                partial_res = streamer.feed_pcm16(audio_bytes)
+                await websocket.send_text(json.dumps(partial_res))
+                
+            # Handle text/control JSON command
+            elif "text" in message and message["text"]:
+                try:
+                    data = json.loads(message["text"])
+                except Exception:
+                    data = {"action": message["text"]}
+
+                action = data.get("action", "").lower()
+                if action in ("stop", "finalize"):
+                    final_res = streamer.finalize()
+                    print(f"[WS] Finalized: '{final_res.get('punctuated_text', '')}' ({final_res.get('final_latency_ms')}ms)")
+                    await websocket.send_text(json.dumps(final_res))
+                elif action == "reset":
+                    streamer.reset()
+                    await websocket.send_text(json.dumps({"type": "reset", "status": "cleared"}))
+
+    except WebSocketDisconnect:
+        print("[WS] Client disconnected cleanly.")
+    except Exception as e:
+        print(f"[WS] WebSocket error: {e}")
+        try:
+            await websocket.send_text(json.dumps({"type": "error", "message": str(e)}))
+        except Exception:
+            pass
+        finally:
+            try:
+                await websocket.close()
+            except Exception:
+                pass
+
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="info")
+    port = int(os.environ.get("PORT", 8080))
+    print(f"[INFO] Starting Agentic Prescription Extractor FastAPI Server on port {port}...")
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
