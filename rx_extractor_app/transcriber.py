@@ -14,17 +14,38 @@ import os
 import io
 import shutil
 import tempfile
-import streamlit as st
+import logging
 import config
 
-# Auto-configure CPU threading for low-latency inference
+logger = logging.getLogger("transcriber")
+logging.basicConfig(level=logging.INFO, format="[%(name)s] %(levelname)s: %(message)s")
+
+# Streamlit is optional – only imported when running in Streamlit context
+try:
+    import streamlit as st
+    _HAS_STREAMLIT = True
+except ImportError:
+    _HAS_STREAMLIT = False
+
+# Module-level model cache used by FastAPI / non-Streamlit callers
+_stt_model_cache: dict = {}
+
+# Auto-configure threading and device
 try:
     import torch
-    if not torch.cuda.is_available():
+    if torch.cuda.is_available():
+        _DEVICE = "cuda"
+        _GPU_NAME = torch.cuda.get_device_name(0)
+        logger.info(f"GPU detected: {_GPU_NAME} — using CUDA for all STT inference")
+    else:
+        _DEVICE = "cpu"
+        _GPU_NAME = None
         threads = os.cpu_count() or 8
         torch.set_num_threads(threads)
+        logger.info(f"No GPU found — using CPU with {threads} threads")
 except Exception:
-    pass
+    _DEVICE = "cpu"
+    _GPU_NAME = None
 
 # Auto-configure bundled ffmpeg binary from imageio_ffmpeg for Windows compatibility
 try:
@@ -43,15 +64,16 @@ except Exception:
     pass
 
 
-@st.cache_resource(show_spinner="Loading and optimizing Whisper_Ayush model weights...")
-def get_stt_pipeline(model_key: str = "whisper_ayush"):
+def _load_stt_pipeline(model_key: str = "whisper_ayush") -> dict:
+    """Internal loader – called once per model key then cached in _stt_model_cache."""
+    logger.info(f"Loading STT model: {model_key}")
     """
     Loads, optimizes, and caches the selected Speech-to-Text model pipeline.
     """
     ayush_path = getattr(config, "AYUSH_WHISPER_PATH", "")
 
     # 1. Ayush's Fine-Tuned Whisper Model (High-Speed Turbo)
-    if model_key == "whisper_ayush":
+    if model_key == "whisper_ayush":  # noqa: E501
         try:
             from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq, pipeline
             import torch
@@ -85,8 +107,8 @@ def get_stt_pipeline(model_key: str = "whisper_ayush"):
                 device=device,
             )
             return {"engine": "transformers_ayush", "pipeline": pipe, "name": "Whisper Ayush (Fast Turbo)"}
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(f"whisper_ayush load failed: {exc}")
 
     # 2. OpenAI Whisper Large v3 Turbo
     elif model_key == "whisper_large_turbo":
@@ -104,8 +126,8 @@ def get_stt_pipeline(model_key: str = "whisper_ayush"):
                 model_kwargs={"attn_implementation": "sdpa", "low_cpu_mem_usage": True},
             )
             return {"engine": "transformers_pipeline", "pipeline": pipe, "name": "Whisper Large v3 Turbo"}
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(f"whisper_large_turbo load failed: {exc}")
 
     # 3. Useful Sensors Moonshine Base & Tiny (Edge Optimized)
     elif model_key in ("moonshine_base", "moonshine_tiny"):
@@ -136,13 +158,44 @@ def get_stt_pipeline(model_key: str = "whisper_ayush"):
             pass
 
     # 5. Local OpenAI Whisper (Base / Tiny) Fast Offline Fallback
+    # 5. Local OpenAI Whisper (Base / Tiny) Fast Offline Fallback
     whisper_size = "tiny" if "tiny" in model_key else "base"
     try:
         import whisper
+        logger.info(f"Falling back to local openai-whisper ({whisper_size})")
         whisper_model = whisper.load_model(whisper_size)
         return {"engine": "whisper_standard", "model": whisper_model, "name": f"OpenAI Whisper ({whisper_size})"}
     except Exception as e:
+        logger.error(f"All STT model loads failed: {e}")
         return {"engine": "error", "error": str(e), "name": "Error"}
+
+
+def get_stt_pipeline(model_key: str = "whisper_ayush") -> dict:
+    """
+    Loads, optimizes, and caches the selected Speech-to-Text model pipeline.
+    Works in both Streamlit and FastAPI / plain-Python contexts.
+    """
+    # Fast path: already loaded
+    if model_key in _stt_model_cache:
+        return _stt_model_cache[model_key]
+
+    # Streamlit context: use its cache decorator for cross-session reuse
+    if _HAS_STREAMLIT:
+        try:
+            @st.cache_resource(show_spinner=f"Loading {model_key}...")
+            def _st_cached(key=model_key):
+                return _load_stt_pipeline(key)
+            result = _st_cached()
+            _stt_model_cache[model_key] = result
+            return result
+        except Exception:
+            pass  # Fall through to plain load
+
+    # FastAPI / non-Streamlit: plain Python dict cache
+    result = _load_stt_pipeline(model_key)
+    _stt_model_cache[model_key] = result
+    logger.info(f"STT model cached: {result.get('name')} engine={result.get('engine')}")
+    return result
 
 
 def transcribe_audio(audio_data, model_key: str = None) -> str:
@@ -173,7 +226,7 @@ def transcribe_audio(audio_data, model_key: str = None) -> str:
             tmp_file.write(audio_data)
         elif hasattr(audio_data, "read"):
             tmp_file.write(audio_data.read())
-            if hasattr(audio_buffer, "seek"):
+            if hasattr(audio_data, "seek"):
                 audio_data.seek(0)
         else:
             tmp_file.write(bytes(audio_data))
@@ -183,7 +236,7 @@ def transcribe_audio(audio_data, model_key: str = None) -> str:
         engine_type = stt_engine.get("engine", "")
         if "transformers" in engine_type:
             pipe = stt_engine["pipeline"]
-            # Ultra-low latency generation parameters: Greedy decoding (num_beams=1) + KV caching
+            # Ultra-low latency generation parameters: Greedy decoding (num_beams=1) + KV caching + return_timestamps for >30s long-form audio
             gen_kwargs = {
                 "language": "english",
                 "task": "transcribe",
@@ -193,9 +246,18 @@ def transcribe_audio(audio_data, model_key: str = None) -> str:
             try:
                 import torch
                 with torch.inference_mode():
-                    result = pipe(tmp_path, generate_kwargs=gen_kwargs)
+                    result = pipe(
+                        tmp_path,
+                        chunk_length_s=30,
+                        stride_length_s=5,
+                        return_timestamps=True,
+                        generate_kwargs=gen_kwargs,
+                    )
             except Exception:
-                result = pipe(tmp_path)
+                try:
+                    result = pipe(tmp_path, return_timestamps=True, generate_kwargs=gen_kwargs)
+                except Exception:
+                    result = pipe(tmp_path)
             return result.get("text", "").strip()
         elif engine_type == "whisper_standard":
             model = stt_engine["model"]

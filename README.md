@@ -41,7 +41,8 @@ graph LR
 
 ```mermaid
 graph LR
-    Input["Raw Prescription Transcript"] --> Sup["Supervisor Agent"]
+    Input["Raw Prescription Transcript"] --> Punct["Sentence & Punctuation Agent"]
+    Punct --> Sup["Supervisor Agent"]
 
     Sup --> Ag1["Medicine & Strength Agent"]
     Sup --> Ag2["Route Agent"]
@@ -189,14 +190,14 @@ streamlit run rx_extractor_app/app.py
 
 ## 🧪 Automated Verification Suite
 
-Run all 19 automated LangGraph regression tests:
+Run all 20 automated LangGraph regression tests:
 ```powershell
 python rx_extractor_app/test_langgraph_pipeline.py
 ```
 
 ```text
 ========================================================
-ALL 19 LANGGRAPH DRIFT-PROOF MULTI-AGENT TESTS PASSED!
+ALL 20 LANGGRAPH DRIFT-PROOF MULTI-AGENT TESTS PASSED!
 ========================================================
 ```
 

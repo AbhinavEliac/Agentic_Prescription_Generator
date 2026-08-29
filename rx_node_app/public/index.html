@@ -104,11 +104,37 @@
                             <div class="record-actions">
                                 <button id="record-toggle-btn" class="btn btn-record" onclick="toggleRecording()">
                                     <span class="record-dot"></span>
-                                    <span id="record-btn-text">Start Recording</span>
+                                    <span id="record-btn-text">Start Live Streaming Dictation</span>
                                 </button>
                                 <span id="record-timer" class="record-time">00:00</span>
                             </div>
                             <audio id="audio-preview" controls class="audio-player hidden"></audio>
+
+                            <!-- Live Streaming Transcript & Telemetry HUD -->
+                            <div id="streaming-hud" class="streaming-transcript-box">
+                                <div class="streaming-header-row">
+                                    <div class="streaming-title">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07l14.14-14.14"/></svg>
+                                        <span>Live Sub-Second Dictation</span>
+                                    </div>
+                                    <div class="streaming-telemetry">
+                                        <span id="vad-badge" class="telemetry-chip">🎙️ VAD: Idle</span>
+                                        <span id="latency-badge" class="telemetry-chip">⚡ Latency: 0ms</span>
+                                        <span id="chunks-badge" class="telemetry-chip">📦 Chunks: 0</span>
+                                    </div>
+                                </div>
+                                <div class="live-transcript-display" id="live-transcript-box">
+                                    <span id="live-transcript-content" class="text-muted">Dictation will stream here live as you speak...</span>
+                                    <span id="live-cursor" class="live-cursor hidden"></span>
+                                </div>
+                                <div class="streaming-options-row">
+                                    <label class="auto-extract-label">
+                                        <input type="checkbox" id="auto-extract-toggle" checked>
+                                        <span>Auto-run LangGraph Extraction on stop</span>
+                                    </label>
+                                    <span id="streaming-status-note" class="status-msg">WebSocket: Standby</span>
+                                </div>
+                            </div>
                         </div>
 
                         <!-- File Upload Box -->
@@ -119,14 +145,13 @@
                                 <span id="selected-file-name" class="file-tag">No file selected</span>
                             </div>
                             <input type="file" id="audio-file-input" accept="audio/*" class="hidden" onchange="handleFileSelected(event)">
-                        </div>
-
-                        <div class="transcribe-action-row">
-                            <button id="transcribe-btn" class="btn btn-secondary" onclick="transcribeAudio()" disabled>
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                                Transcribe Voice Note
-                            </button>
-                            <span id="transcribe-status" class="status-msg"></span>
+                            <div class="transcribe-action-row" style="margin-top: 0.75rem;">
+                                <button id="transcribe-btn" class="btn btn-secondary" onclick="transcribeAudio()" disabled>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                                    Transcribe Uploaded File
+                                </button>
+                                <span id="transcribe-status" class="status-msg"></span>
+                            </div>
                         </div>
                     </div>
 

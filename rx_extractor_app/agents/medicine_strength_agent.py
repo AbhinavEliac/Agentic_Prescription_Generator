@@ -114,7 +114,7 @@ def medicine_strength_agent(state: AgenticRxState, llm: Any = None) -> Dict[str,
                     })
                 else:
                     match_nodose = re.search(
-                        r"(?:take|administer|give|consume|dissolve|inhale|apply|put|instill|gently\s+massage|massage|cleanse)?\s*(?:one|two|three)?\s*(?:tablet|tab|capsule|cap|rotacap|pill|vial|sachet|puff)?\s*(?:of\s+)?([A-Za-z0-9\-]+(?:\s+[A-Za-z0-9\-]+){0,3}?)\s*(?:tablet|capsule|oral\s+suspension|suspension|sachet|vial|cream|ointment|gel|drops|rotacap|puff|paste|wash|orally|topically|by\s+mouth|before|after|twice|once|three|up\s+to|in\s+one\s+liter|every|onto|along|to\s+the|over)\b",
+                        r"(?:take|administer|give|consume|dissolve|inhale|apply|put|instill|gently\s+massage|massage|cleanse)?\s*(?:one|two|three)?\s*(?:tablet|tab|capsule|cap|rotacap|pill|vial|sachet|puff)?\s*(?:of\s+)?([A-Za-z0-9\-]+(?:\s+[A-Za-z0-9\-]+){0,3}?)\s*(?:tablet|capsule|oral\s+suspension|suspension|sachet|vial|cream|ointment|gel|drops|rotacap|puff|paste|wash|orally|topically|by\s+mouth|before|after|twice|once|three|up\s+to|in\s+one\s+liter|every|onto|along|to\s+the|over|for|till|upto|until|daily|SOS|HS|STAT)\b",
                         clause,
                         re.IGNORECASE,
                     )
@@ -123,7 +123,7 @@ def medicine_strength_agent(state: AgenticRxState, llm: Any = None) -> Dict[str,
                         cleaned_name = re.sub(FORM_PATTERN, "", raw_name).strip()
                         cleaned_name = re.sub(ACTION_VERBS_PATTERN, "", cleaned_name).strip()
                         cleaned_name = re.sub(r"\b(?:of|one|vial|sachet|combination)\b", "", cleaned_name, flags=re.IGNORECASE).strip()
-                        if cleaned_name and len(cleaned_name) >= 3 and cleaned_name.lower() not in ("stick", "avoid", "visit", "seek", "please", "keep", "fomentation"):
+                        if cleaned_name and len(cleaned_name) >= 3 and cleaned_name.lower() not in ("stick", "avoid", "visit", "seek", "please", "keep", "fomentation", "all the medicines", "both of them"):
                             extracted_meds.append({
                                 "medicine_id": m_id,
                                 "drug_name": re.sub(r"\s+", " ", cleaned_name).strip(),

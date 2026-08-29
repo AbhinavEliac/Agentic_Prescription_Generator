@@ -58,9 +58,9 @@ INDEPENDENT_ADVICE_START = (
 
 # Robust punctuation-independent clinical advice pattern (captures continuous speech advice)
 CONTINUOUS_ADVICE_SPAN_PATTERNS = [
-    r"(?i)\b(?:if\s+[a-zA-Z\s\-]+?(?:does\s+not\s+go\s+away|does\s+not\s+clear|persists|worsens|increases|crosses\s+\d+|develops|occurs|remains\s+high|subsides|heals|drops\s+to\s+normal)(?:,\s*|\s+)?(?:(?:increase|decrease|reduce|double|taper)\s+(?:the\s+)?(?:dose|dosage)(?:\s+by\s+\d+\s*(?:mgs?|mg|g|mcg|ml))?|Meet\s+(?:the\s+)?doctor|come\s+visit\s+(?:the\s+|your\s+)?doctor|consult\s+(?:your\s+)?doctor|seek\s+medical\s+review|visit\s+(?:the\s+)?emergency|report\s+immediately)?)\b",
-    r"(?i)\b(?:(?:increase|decrease|reduce|double|taper)\s+(?:the\s+)?(?:dose|dosage)\s+(?:by\s+)?\d+\s*(?:mgs?|mg|g|mcg|ml)?(?:,\s*|\s+)?(?:if\s+[a-zA-Z\s\-]+?(?:does\s+not\s+go\s+away|does\s+not\s+clear|persists|worsens|increases|crosses\s+\d+|develops|occurs|remains\s+high|subsides|heals))?)\b",
-    r"(?i)\b(?:meet\s+(?:the\s+)?doctor)\b",
+    r"(?i)\b(?:if\s+[a-zA-Z0-9\s\-]+?(?:does\s+not\s+go\s+away|does\s+not\s+clear|does\s+not\s+improve|persists|worsens|increases|crosses\s+\d+|develops|occurs|remains\s+high|subsides|heals|drops\s+to\s+normal)(?:,\s*|\s+)?(?:(?:increase|decrease|reduce|double|taper)\s+(?:the\s+)?(?:dose|dosage)(?:\s+by\s+\d+\s*(?:mgs?|mg|g|mcg|ml))?|Meet\s+(?:the\s+|your\s+)?doctor|come\s+visit\s+(?:the\s+|your\s+)?doctor|visit\s+(?:the\s+|your\s+)?doctor|consult\s+(?:the\s+|your\s+)?doctor|seek\s+medical\s+review|visit\s+(?:the\s+)?emergency|report\s+immediately|start\s+[a-zA-Z0-9\s\-]+?)?)\b",
+    r"(?i)\b(?:(?:increase|decrease|reduce|double|taper)\s+(?:the\s+)?(?:dose|dosage)\s+(?:by\s+)?\d+\s*(?:mgs?|mg|g|mcg|ml)?(?:,\s*|\s+)?(?:if\s+[a-zA-Z0-9\s\-]+?(?:does\s+not\s+go\s+away|does\s+not\s+clear|persists|worsens|increases|crosses\s+\d+|develops|occurs|remains\s+high|subsides|heals))?)\b",
+    r"(?i)\b(?:meet\s+(?:the\s+|your\s+)?doctor)\b",
     r"(?i)\b(?:please\s+see\s+me(?:\s+after\s+\d+\s+days?)?)\b",
     r"(?i)\b(?:see\s+(?:your\s+|the\s+)?doctor(?:\s+after\s+\d+\s+days?)?)\b",
     r"(?i)\b(?:(?:also\s+)?take\s+walks?(?:\s+after\s+dinner)?(?:\s+and\s+it\s+will\s+reduce\s+your\s+headaches)?)\b",
@@ -164,8 +164,8 @@ DRUG_CLASS_MAP = {
 }
 
 
-def deduplicate_phrases(inst_list: List[str]) -> List[str]:
-    """Helper to clean duplicate/contained strings, prioritizing complete compound clauses."""
+def deduplicate_phrases(inst_list: List[str], source_text: str = "") -> List[str]:
+    """Helper to clean duplicate/contained strings, prioritizing complete compound clauses while strictly preserving transcript chronological order."""
     filtered: List[str] = []
     sorted_candidates = sorted([c.strip() for c in inst_list if c and not is_placeholder(c)], key=len, reverse=True)
     for cand in sorted_candidates:
@@ -174,6 +174,18 @@ def deduplicate_phrases(inst_list: List[str]) -> List[str]:
             continue
         if c_clean not in filtered and c_clean.lower() not in [f.lower() for f in filtered]:
             filtered.append(c_clean)
+
+    # Re-sort deduplicated phrases in strictly chronological order matching source_text
+    if source_text:
+        def get_pos(phrase: str) -> int:
+            clean_p = re.sub(r"^\d+\.\s*", "", phrase).strip()
+            p_idx = source_text.lower().find(clean_p.lower())
+            if p_idx != -1:
+                return p_idx
+            p_idx = source_text.lower().find(clean_p[:15].lower())
+            return p_idx if p_idx != -1 else 999999
+        filtered.sort(key=get_pos)
+
     return filtered
 
 
@@ -224,27 +236,31 @@ def instruction_agent(state: AgenticRxState, llm: Any = None) -> Dict[str, Any]:
             s_clean = re.sub(r"^[\s,.\-]+", "", sent).strip()
             s_lower = s_clean.lower()
             is_class_specific = any(re.search(rf"\b{re.escape(k)}\b", s_lower) for k in DRUG_CLASS_MAP.keys())
-            has_action = bool(re.search(r"(?i)\b(?:take|administer|give|prescribe|start|consume|dissolve|inhale|apply|put|instill)\b", s_clean))
+            has_action = bool(re.search(r"(?i)\b(?:take|administer|give|prescribe|start|consume|dissolve|inhale|apply|put|instill|inject|infuse|sprays?|drops?|cleanse|massage)\b", s_clean))
             has_dose_form = bool(re.search(r"(?i)(?:\d+\s*(?:mg|g|mcg|ml|iu|%)|\b(?:tablets?|capsules?|rotacaps?|vials?|sachets?|syrups?|gels?|drops?|sprays?|ointments?|creams?|lotions?)\b)", s_clean))
-            is_med_sentence = (has_action and has_dose_form) or bool(re.search(MED_ACTION_VERB_START, s_clean))
-            is_advice_sentence = bool(re.search(INDEPENDENT_ADVICE_START, s_clean))
+            is_med_sentence = (has_action and has_dose_form) or bool(re.search(MED_ACTION_VERB_START, s_clean)) or bool(re.search(r"(?i)\b(?:sprays?|drops?)\s+of\s+[A-Za-z0-9\-]+", s_clean))
+            is_advice_sentence = bool(re.search(INDEPENDENT_ADVICE_START, s_clean)) or any(re.search(p, s_clean, re.IGNORECASE) for p in CONTINUOUS_ADVICE_SPAN_PATTERNS)
             is_freq_schedule_sentence = bool(re.search(r"(?i)\b(?:it\s+(?:should\s+be\s+taken|is\s+to\s+be\s+taken|must\s+be\s+taken|to\s+be\s+taken|is\s+taken)|take\s+(?:it|this(?:\s+medicine)?)|both(?:\s+of\s+them)?|all(?:\s+these|\s+of\s+them)?(?:\s+medicines|\s+drugs|\s+tablets)?|each(?:\s+of\s+them)?)\b", s_clean)) and bool(re.search(r"(?i)\b(?:\d+\s+times|once|twice|thrice|daily|every|at\s+bedtime|morning|night)\b", s_clean))
 
-            if not is_class_specific and not is_med_sentence and not is_freq_schedule_sentence and (is_advice_sentence or len(s_clean) >= 10):
+            if not is_class_specific and not is_med_sentence and not is_freq_schedule_sentence and (is_advice_sentence or len(s_clean) >= 15):
                 if not re.search(r"^\s*(?:Morning\s+Night|\d+\s*(?:mg|g|mcg|ml))\b", s_clean, re.IGNORECASE):
                     if s_clean and s_clean not in global_clinical_advice:
                         global_clinical_advice.append(s_clean)
 
-        # B. Continuous-Span discovery (finds unpunctuated advice phrases anywhere in raw speech)
+        # B. Continuous-Span discovery (finds unpunctuated advice phrases anywhere in raw speech sorted chronologically)
+        matched_spans: List[tuple] = []
         for adv_pat in CONTINUOUS_ADVICE_SPAN_PATTERNS:
-            matches = re.finditer(adv_pat, input_text, re.IGNORECASE)
-            for m in matches:
+            for m in re.finditer(adv_pat, input_text, re.IGNORECASE):
                 span_txt = m.group(0).strip()
                 span_lower = span_txt.lower()
                 is_class_specific = any(re.search(rf"\b{re.escape(k)}\b", span_lower) for k in DRUG_CLASS_MAP.keys())
                 if not is_class_specific and len(span_txt) >= 5:
-                    if span_txt not in global_clinical_advice and not any(span_txt.lower() in g.lower() for g in global_clinical_advice):
-                        global_clinical_advice.append(span_txt)
+                    matched_spans.append((m.start(), span_txt))
+
+        matched_spans.sort(key=lambda x: x[0])
+        for _, span_txt in matched_spans:
+            if span_txt not in global_clinical_advice and not any(span_txt.lower() in g.lower() for g in global_clinical_advice):
+                global_clinical_advice.append(span_txt)
 
         for idx, s in enumerate(segments):
             m_id = s["medicine_id"]
@@ -259,12 +275,12 @@ def instruction_agent(state: AgenticRxState, llm: Any = None) -> Dict[str, Any]:
 
             # Derive current medicine name / stem from this clause
             med_lead_match = re.search(
-                r"(?:take|administer|give|consume|dissolve|inhale|apply|put|instill|start|cleanse|gently\s+massage|massage)?\s*(?:one|two|three|10\s*ml)?\s*(?:tablet|tab|capsule|cap|rotacap|vial|sachet|puff|sprays?|drops?|teaspoons?|dab\s+of|thin\s+layer\s+of|pea-sized\s+amount\s+of)?\s*(?:of\s+)?([A-Za-z0-9\-]+)",
+                r"(?:also\s+|additionally\s+)?(?:take|administer|give|consume|dissolve|inhale|apply|put|instill|start|cleanse|gently\s+massage|massage)?\s*(?:one|two|three|10\s*ml)?\s*(?:tablet|tab|capsule|cap|rotacap|vial|sachet|puff|sprays?|drops?|teaspoons?|dab\s+of|thin\s+layer\s+of|pea-sized\s+amount\s+of)?\s*(?:of\s+)?([A-Za-z0-9\-]+)",
                 core_med_clause,
                 re.IGNORECASE,
             )
             med_stem = med_lead_match.group(1).lower() if med_lead_match else ""
-            if med_stem in ("one", "two", "three", "tab", "tablet", "capsule", "vial", "sachet", "none", "administer", "take", "start", "apply", "cleanse", "this", "print"):
+            if med_stem in ("one", "two", "three", "tab", "tablet", "capsule", "vial", "sachet", "none", "administer", "take", "start", "apply", "cleanse", "this", "print", "also", "additionally"):
                 med_stem = ""
 
             primary_insts: List[str] = []
@@ -364,14 +380,50 @@ def instruction_agent(state: AgenticRxState, llm: Any = None) -> Dict[str, Any]:
                     if lf in input_text.lower() and lf not in [x.lower() for x in primary_insts]:
                         primary_insts.append(lf)
 
-            # 2e. Attach global independent advice sentences to the secondary instructions of the final medicine record
+            # 2e. Attach segment-level advice clauses directly bound to this medicine
+            for adv_c in s.get("advice_clauses", []):
+                adv_lower = adv_c.lower()
+                is_freq_schedule = bool(re.search(r"(?i)\b(?:it\s+(?:should\s+be\s+taken|is\s+to\s+be\s+taken|must\s+be\s+taken|to\s+be\s+taken|is\s+taken)|take\s+(?:it|this(?:\s+medicine)?))\b", adv_c)) and bool(re.search(r"(?i)\b(?:\d+\s+times|once|twice|thrice|daily|every|at\s+bedtime|morning|night)\b", adv_c))
+                if is_freq_schedule:
+                    continue
+
+                is_mismatched = False
+                for class_key, class_drugs in DRUG_CLASS_MAP.items():
+                    if re.search(rf"\b{re.escape(class_key)}\b", adv_lower) and not (any(d in clause_lower for d in class_drugs) or (med_stem and any(d in med_stem for d in class_drugs))):
+                        is_mismatched = True
+                        break
+                if not is_mismatched and adv_c.lower() not in [x.lower() for x in secondary_insts]:
+                    secondary_insts.append(adv_c)
+
+            # 2f. Attach unassigned global advice sentences to the secondary instructions of the final medicine record
             if idx == total_meds - 1:
+                all_assigned_advice = set()
+                for earlier_s in segments:
+                    for ea in earlier_s.get("advice_clauses", []):
+                        all_assigned_advice.add(ea.lower())
+
                 for adv in global_clinical_advice:
-                    if adv.lower() not in [x.lower() for x in secondary_insts]:
+                    adv_low = adv.lower()
+                    if adv_low not in all_assigned_advice and adv_low not in [x.lower() for x in secondary_insts]:
                         secondary_insts.append(adv)
 
-            clean_primary = deduplicate_phrases(primary_insts)
-            clean_secondary = deduplicate_phrases(secondary_insts)
+            # Sort both primary and secondary instructions strictly by their appearance order in the source transcript
+            def get_appearance_index(phrase: str) -> int:
+                # Remove leading numbers/bullets and clean
+                clean_p = re.sub(r"^\d+\.\s*", "", phrase).strip()
+                p_idx = input_text.lower().find(clean_p.lower())
+                if p_idx != -1:
+                    return p_idx
+                # Partial match fallback for first 15 chars
+                short_p = clean_p[:15].lower()
+                p_idx = input_text.lower().find(short_p)
+                return p_idx if p_idx != -1 else 999999
+
+            primary_insts.sort(key=get_appearance_index)
+            secondary_insts.sort(key=get_appearance_index)
+
+            clean_primary = deduplicate_phrases(primary_insts, source_text=input_text)
+            clean_secondary = deduplicate_phrases(secondary_insts, source_text=input_text)
 
             formatted_primary = " ".join(f"{i+1}. {txt}" for i, txt in enumerate(clean_primary)) if clean_primary else "NONE"
             formatted_secondary = " ".join(f"{i+1}. {txt}" for i, txt in enumerate(clean_secondary)) if clean_secondary else "NONE"

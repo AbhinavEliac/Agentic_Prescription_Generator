@@ -422,7 +422,96 @@ def test_complex_multidrug_with_nasal_irrigations_and_precautions():
     assert "into each nostril" in parsed[-1]["instruction"].lower()
     assert "saline nasal irrigations" in parsed[-1]["additional_instruction"].lower()
     assert "strict maximum of 3 days" in parsed[-1]["additional_instruction"].lower()
-    print("PASS: Multi-drug with nasal irrigations and precautions cleanly extracted.")
+def test_sentence_punctuation_correction_agent():
+    print("\n--- Test 20: Sentence & Punctuation Correction Agent ---")
+    raw_unpunctuated = (
+        "take disprin 500 mg tablets if the fever does not go away come visit the doctor take regular water "
+        "and take amoxicillin 500 mg tid for 7 days and take pantoprazole 40 mg once daily before breakfast for 14 days"
+    )
+    output, gen_time, agent_logs, blocks = run_graph_extraction(None, raw_unpunctuated)
+    
+    # 1. Verify Punctuation Agent log exists and has normalized sentences
+    punct_logs = [log for log in agent_logs if "Punctuation" in log.get("agent", "")]
+    assert len(punct_logs) > 0, "Punctuation & Sentence Correction Agent log missing!"
+    punctuated_text = punct_logs[0].get("punctuated_text", "")
+    assert "Take disprin 500 mg tablets." in punctuated_text or "Take Disprin 500 mg tablets." in punctuated_text
+    assert "Take amoxicillin 500 mg" in punctuated_text or "Take Amoxicillin 500 mg" in punctuated_text
+    assert "Take pantoprazole 40 mg" in punctuated_text or "Take Pantoprazole 40 mg" in punctuated_text
+    
+    # 2. Verify accurate 3-drug extraction
+    parsed = parse_output_fields(output, query=raw_unpunctuated)
+    assert len(parsed) == 3, f"Expected 3 medicines, got {len(parsed)}"
+    assert "disprin 500 mg" in parsed[0]["Drug_name"].lower()
+    assert "amoxicillin 500 mg" in parsed[1]["Drug_name"].lower()
+    assert "tid" in parsed[1]["frequency"].lower()
+    assert "7 days" in parsed[1]["duration"].lower()
+    assert "before breakfast" in parsed[2]["instruction"].lower()
+    assert "come visit the doctor" in parsed[0]["additional_instruction"].lower() or any("come visit the doctor" in p["additional_instruction"].lower() for p in parsed)
+    print("PASS: Sentence & Punctuation Correction Agent successfully segmented, punctuated, and forwarded clinical statements.")
+
+
+def test_chronological_instruction_order_and_conditional_punctuation():
+    print("\n--- Test 21: Chronological Instruction Order & Multi-Conditional Punctuation ---")
+    raw = "Take parasitamol 400 mg 100 mg tablets for 5 days every 4 hours if the fever does not go away consult the doctor and if it is still does not go away start eating 3-3 little"
+    output, _, logs, _ = run_graph_extraction(None, raw)
+    
+    # Verify punctuation
+    punct_logs = [l for l in logs if "Punctuation" in l.get("agent", "")]
+    assert len(punct_logs) > 0
+    punc_text = punct_logs[0].get("punctuated_text", "")
+    assert "If the fever does not go away, consult the doctor." in punc_text
+    assert "If it is still does not go away, start eating 3-3 little." in punc_text
+    
+    # Verify exact chronological ordering in additional_instruction
+    parsed = parse_output_fields(output, query=raw)
+    assert len(parsed) == 1
+    add_inst = parsed[0]["additional_instruction"]
+    idx_fever = add_inst.find("If the fever does not go away, consult the doctor")
+    idx_still = add_inst.find("If it is still does not go away, start eating 3-3 little")
+    assert idx_fever != -1, "First conditional clause missing!"
+    assert idx_still != -1, "Second conditional clause missing!"
+    assert idx_fever < idx_still, "Instructions were not ordered chronologically!"
+    print("PASS: Multi-conditional sentence punctuation and strictly chronological instruction ordering verified.")
+
+
+def test_5_drug_sequential_conditional_advice_attribution():
+    print("\n--- Test 22: 5-Drug Sequential Conditional Advice Attribution ---")
+    raw = (
+        "Take paracetamol 400 mg for 30 days. If the fever does not go away, consult the doctor. "
+        "Take disprin 300 mg for 30 days. If the headache does not go away, consult the doctor. "
+        "Take cellulose 50 grams for your body build up. If the body does not build up, start eating more protein and consult the doctor. "
+        "take ibroughin for 60 days if the fever does not build up start eating more protein and consult the doctor "
+        "take I brew fill for 60 days if the fever does not go away consult the doctor "
+        "take all the medicines in the above in the liquid form and your result should start stowing if it does not show consult the doctor"
+    )
+    output, _, logs, blocks = run_graph_extraction(None, raw)
+    parsed = parse_output_fields(output, query=raw)
+    assert len(parsed) == 5, f"Expected 5 medicines, got {len(parsed)}"
+    
+    # 1. Paracetamol
+    assert "paracetamol 400 mg" in parsed[0]["Drug_name"].lower()
+    assert "30 days" in parsed[0]["duration"].lower()
+    assert "fever does not go away" in parsed[0]["additional_instruction"].lower()
+    
+    # 2. Disprin
+    assert "disprin 300 mg" in parsed[1]["Drug_name"].lower()
+    assert "30 days" in parsed[1]["duration"].lower()
+    assert "headache does not go away" in parsed[1]["additional_instruction"].lower()
+    
+    # 3. Cellulose
+    assert "cellulose 50 g" in parsed[2]["Drug_name"].lower()
+    assert "body does not build up" in parsed[2]["additional_instruction"].lower()
+    
+    # 4. Ibroughin
+    assert "ibroughin" in parsed[3]["Drug_name"].lower()
+    assert "60 days" in parsed[3]["duration"].lower()
+    assert "fever does not build up" in parsed[3]["additional_instruction"].lower()
+    
+    # 5. I brew fill
+    assert "i brew fill" in parsed[4]["Drug_name"].lower()
+    assert "60 days" in parsed[4]["duration"].lower()
+    assert "fever does not go away" in parsed[4]["additional_instruction"].lower()
+    print("PASS: 5-drug sequential conditional advice attribution successfully verified.")
 
 
 if __name__ == "__main__":
@@ -445,6 +534,10 @@ if __name__ == "__main__":
     test_dosage_titration_instruction_capture()
     test_faulty_grammar_duration_and_comma_titration()
     test_complex_multidrug_with_nasal_irrigations_and_precautions()
+    test_sentence_punctuation_correction_agent()
+    test_chronological_instruction_order_and_conditional_punctuation()
+    test_5_drug_sequential_conditional_advice_attribution()
     print("\n========================================================")
-    print("ALL 19 LANGGRAPH DRIFT-PROOF MULTI-AGENT TESTS PASSED!")
+    print("ALL 22 LANGGRAPH DRIFT-PROOF MULTI-AGENT TESTS PASSED!")
     print("========================================================")
+

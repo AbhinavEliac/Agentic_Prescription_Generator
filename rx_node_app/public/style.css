@@ -453,6 +453,111 @@ body {
     background: var(--rose);
 }
 
+/* Live Streaming Transcript & Telemetry */
+.streaming-transcript-box {
+    width: 100%;
+    background: rgba(11, 15, 25, 0.85);
+    border: 1px solid var(--border-highlight);
+    border-radius: var(--radius-sm);
+    padding: 0.85rem;
+    margin-top: 0.6rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(10px);
+}
+
+.streaming-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.35rem;
+}
+
+.streaming-title {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-weight: 600;
+    color: var(--cyan);
+}
+
+.streaming-telemetry {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.telemetry-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.15rem 0.45rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+}
+
+.telemetry-chip.active {
+    background: rgba(16, 185, 129, 0.15);
+    border-color: rgba(16, 185, 129, 0.4);
+    color: var(--emerald);
+}
+
+.live-transcript-display {
+    min-height: 52px;
+    max-height: 120px;
+    overflow-y: auto;
+    font-size: 0.88rem;
+    line-height: 1.5;
+    color: #E2E8F0;
+    font-family: var(--font-body);
+    word-break: break-word;
+}
+
+.live-cursor {
+    display: inline-block;
+    width: 2px;
+    height: 1.1em;
+    background: var(--cyan);
+    vertical-align: text-bottom;
+    margin-left: 2px;
+    animation: cursorBlink 0.8s infinite;
+    box-shadow: 0 0 8px var(--cyan);
+}
+
+@keyframes cursorBlink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+
+.streaming-options-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 0.35rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.auto-extract-label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    cursor: pointer;
+}
+
+.auto-extract-label input[type="checkbox"] {
+    accent-color: var(--primary);
+    cursor: pointer;
+}
+
 .btn-record.recording .record-dot {
     background: #FFF;
 }
