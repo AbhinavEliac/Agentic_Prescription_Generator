@@ -114,6 +114,32 @@ def parse_output_fields(output: str, query: str = None) -> list[dict]:
             if num_part1 in fields["Drug_name"]:
                 fields["strength"] = formatted_dose2
 
+    # Populate dose, dose_unit, schedule, days for clinical UI
+    for item in parsed_items:
+        strength_val = item.get("strength", "NONE")
+        drug_name_val = item.get("Drug_name", "NONE")
+        dose_val = "NONE"
+        dose_unit_val = "NONE"
+
+        if strength_val and strength_val != "NONE":
+            m = re.match(r"^(\d+(?:\.\d+)?)\s*(.*)$", strength_val.strip())
+            if m:
+                dose_val = m.group(1).strip()
+                dose_unit_val = m.group(2).strip() or "NONE"
+            else:
+                dose_val = strength_val.strip()
+                dose_unit_val = "NONE"
+        elif drug_name_val and drug_name_val != "NONE":
+            m = re.search(r"\b(\d+(?:\.\d+)?)\s*(mg|g|mcg|ml|l|iu|drops|tablets?|capsules?|puffs?|units?|%)\b", drug_name_val, re.IGNORECASE)
+            if m:
+                dose_val = m.group(1).strip()
+                dose_unit_val = m.group(2).strip().lower()
+
+        item["dose"] = dose_val
+        item["dose_unit"] = dose_unit_val
+        item["schedule"] = item.get("frequency", "NONE")
+        item["days"] = item.get("duration", "NONE")
+
     return parsed_items
 
 

@@ -52,12 +52,13 @@ INDEPENDENT_ADVICE_START = (
     r"(?:also\s+)?take\s+walks?|go\s+for\s+walks?|take\s+rest|take\s+steam|"
     r"wear\s+loose|monitor\s+your|monitor\s+weight|monitor\s+blood|monitor\s+inr|monitor|"
     r"be\s+sure\s+to\s+rinse|rinse\s+your\s+mouth\s+thoroughly|rinse\s+mouth\s+after|"
-    r"if\s+headache|if\s+blood\s+pressure|if\s+fever|if\s+symptoms|if\s+pain|if\s+rash|if\s+numbness|if\s+severe|if\s+ulcers|if\s+condition|if\s+breathing|if\s+dizziness|"
+    r"(?:for\s+)?if\s+[a-zA-Z0-9\-]+|in\s+case\s+(?:of\s+)?|whenever|when|"
     r"(?:increase|decrease|reduce|double|taper)\s+(?:the\s+)?(?:dose|dosage))\b"
 )
 
 # Robust punctuation-independent clinical advice pattern (captures continuous speech advice)
 CONTINUOUS_ADVICE_SPAN_PATTERNS = [
+    r"(?i)\b(?:(?:for\s+)?(?:if|in\s+case\s+(?:of)?|whenever|when)\s+[a-zA-Z0-9\s\-]+?(?:,\s*|\s+)?(?:consult|contact|visit|see|call|report|meet|seek|discontinue|stop|start|increase|decrease|reduce|double|taper)\b[^\.\n;]*)",
     r"(?i)\b(?:if\s+[a-zA-Z0-9\s\-]+?(?:does\s+not\s+go\s+away|does\s+not\s+clear|does\s+not\s+improve|persists|worsens|increases|crosses\s+\d+|develops|occurs|remains\s+high|subsides|heals|drops\s+to\s+normal)(?:,\s*|\s+)?(?:(?:increase|decrease|reduce|double|taper)\s+(?:the\s+)?(?:dose|dosage)(?:\s+by\s+\d+\s*(?:mgs?|mg|g|mcg|ml))?|Meet\s+(?:the\s+|your\s+)?doctor|come\s+visit\s+(?:the\s+|your\s+)?doctor|visit\s+(?:the\s+|your\s+)?doctor|consult\s+(?:the\s+|your\s+)?doctor|seek\s+medical\s+review|visit\s+(?:the\s+)?emergency|report\s+immediately|start\s+[a-zA-Z0-9\s\-]+?)?)\b",
     r"(?i)\b(?:(?:increase|decrease|reduce|double|taper)\s+(?:the\s+)?(?:dose|dosage)\s+(?:by\s+)?\d+\s*(?:mgs?|mg|g|mcg|ml)?(?:,\s*|\s+)?(?:if\s+[a-zA-Z0-9\s\-]+?(?:does\s+not\s+go\s+away|does\s+not\s+clear|persists|worsens|increases|crosses\s+\d+|develops|occurs|remains\s+high|subsides|heals))?)\b",
     r"(?i)\b(?:meet\s+(?:the\s+|your\s+)?doctor)\b",

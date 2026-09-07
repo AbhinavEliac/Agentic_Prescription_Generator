@@ -3,328 +3,240 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Agentic Prescription Extractor & Studio</title>
-    <meta name="description" content="Parallel Node.js Application for LangGraph Multi-Agent Clinical Prescription Extraction and Multi-Engine Speech-to-Text Transcription.">
-    <!-- Google Fonts: Outfit & Inter -->
+    <title>DMH Prescription ASR</title>
+    <meta name="description" content="Deenanath Mangeshkar Hospital - Voice-to-Prescription ASR & Semantic Clinical Extraction System">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <!-- Google Fonts: Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="app-background">
-        <div class="glow-orb orb-1"></div>
-        <div class="glow-orb orb-2"></div>
-        <div class="glow-orb orb-3"></div>
-    </div>
 
-    <!-- Header Navigation -->
-    <header class="app-header">
-        <div class="header-brand">
-            <div class="brand-icon">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07l14.14-14.14"/>
-                </svg>
-            </div>
-            <div>
-                <h1 class="brand-title">RxAgent Studio</h1>
-                <p class="brand-subtitle">LangGraph Multi-Agent Prescription & STT Intelligence</p>
-            </div>
-        </div>
+    <!-- Main DMH Container Card -->
+    <div class="dmh-card-wrapper">
+        <div class="dmh-card">
 
-        <div class="header-status-group">
-            <div class="status-badge" id="api-status-badge">
-                <span class="status-dot pulsing"></span>
-                <span id="api-status-text">Connecting to Agent Gateway...</span>
-            </div>
-            <nav class="nav-tabs">
-                <button class="nav-tab active" id="tab-studio-btn" onclick="switchView('studio')">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-                    Prescription Studio
+            <!-- Hospital Header -->
+            <header class="hospital-header">
+                <div class="hospital-brand">
+                    <div class="hospital-logo">
+                        <svg width="40" height="40" viewBox="0 0 48 48" fill="none">
+                            <circle cx="24" cy="24" r="22" fill="#FFFFFF" stroke="#DC2626" stroke-width="2"/>
+                            <!-- Red Cross with musical emblem -->
+                            <rect x="20" y="10" width="8" height="28" rx="2" fill="#DC2626"/>
+                            <rect x="10" y="20" width="28" height="8" rx="2" fill="#DC2626"/>
+                            <circle cx="16" cy="16" r="3" fill="#DC2626"/>
+                            <circle cx="32" cy="16" r="3" fill="#DC2626"/>
+                            <path d="M16 16 L32 16" stroke="#DC2626" stroke-width="2"/>
+                        </svg>
+                    </div>
+                    <h1 class="hospital-title">Deenanath Mangeshkar Hospital</h1>
+                </div>
+            </header>
+
+            <!-- Recording & Control Buttons Row -->
+            <div class="controls-row">
+                <button id="btn-start-record" class="btn btn-start-recording" onclick="startRecording()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                        <line x1="12" y1="19" x2="12" y2="23"/>
+                        <line x1="8" y1="23" x2="16" y2="23"/>
+                    </svg>
+                    <span>Start Recording</span>
                 </button>
-                <button class="nav-tab" id="tab-history-btn" onclick="switchView('history')">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                    History & Audit Logs
+
+                <button id="btn-stop-record" class="btn btn-stop" onclick="stopRecording()" disabled>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                        <rect x="5" y="5" width="14" height="14" rx="2"/>
+                    </svg>
+                    <span>Stop</span>
                 </button>
-            </nav>
-        </div>
-    </header>
 
-    <!-- Main Workspace Container -->
-    <main class="main-container">
-        <!-- VIEW 1: PRESCRIPTION STUDIO -->
-        <section id="view-studio" class="active-view">
-            <div class="workspace-grid">
-                
-                <!-- Left Column: Input & Controls -->
-                <div class="card glass-card input-card">
-                    <div class="card-header">
-                        <div class="card-title-group">
-                            <span class="step-num">01</span>
-                            <div>
-                                <h2 class="card-title">Clinical Consultation Input</h2>
-                                <p class="card-desc">Record live doctor voice notes or paste doctor instructions.</p>
-                            </div>
-                        </div>
-                        <div class="input-mode-toggle">
-                            <button class="mode-btn active" id="mode-text-btn" onclick="setInputMode('text')">Text Mode 📝</button>
-                            <button class="mode-btn" id="mode-voice-btn" onclick="setInputMode('voice')">Voice Studio 🎙️</button>
-                        </div>
-                    </div>
-
-                    <!-- Voice Recorder & STT Controls -->
-                    <div id="voice-controls-section" class="voice-section hidden">
-                        <div class="voice-config-bar">
-                            <div class="config-field">
-                                <label for="stt-model-select">STT Model Engine</label>
-                                <select id="stt-model-select" class="form-select">
-                                    <option value="whisper_ayush">Whisper Ayush (Fast Turbo)</option>
-                                    <option value="whisper_large_turbo">OpenAI Whisper Large v3 Turbo</option>
-                                    <option value="canary_1b">NVIDIA Canary 1B</option>
-                                    <option value="parakeet_tdt">NVIDIA Parakeet TDT 1.1B</option>
-                                    <option value="moonshine_base">Useful Sensors Moonshine Base</option>
-                                    <option value="moonshine_tiny">Useful Sensors Moonshine Tiny</option>
-                                    <option value="whisper_standard">OpenAI Whisper Base (Local)</option>
-                                </select>
-                            </div>
-                            <div class="config-field">
-                                <label>Audio Input Method</label>
-                                <div class="audio-source-switch">
-                                    <button class="submode-btn active" id="audio-mic-btn" onclick="setAudioSource('mic')">Microphone 🎤</button>
-                                    <button class="submode-btn" id="audio-file-btn" onclick="setAudioSource('file')">Upload Audio 📁</button>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Mic Recording Box -->
-                        <div id="mic-box" class="mic-recorder-box">
-                            <div class="visualizer-container">
-                                <canvas id="waveform-canvas" width="400" height="80"></canvas>
-                            </div>
-                            <div class="record-actions">
-                                <button id="record-toggle-btn" class="btn btn-record" onclick="toggleRecording()">
-                                    <span class="record-dot"></span>
-                                    <span id="record-btn-text">Start Live Streaming Dictation</span>
-                                </button>
-                                <span id="record-timer" class="record-time">00:00</span>
-                            </div>
-                            <audio id="audio-preview" controls class="audio-player hidden"></audio>
-
-                            <!-- Live Streaming Transcript & Telemetry HUD -->
-                            <div id="streaming-hud" class="streaming-transcript-box">
-                                <div class="streaming-header-row">
-                                    <div class="streaming-title">
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07l14.14-14.14"/></svg>
-                                        <span>Live Sub-Second Dictation</span>
-                                    </div>
-                                    <div class="streaming-telemetry">
-                                        <span id="vad-badge" class="telemetry-chip">🎙️ VAD: Idle</span>
-                                        <span id="latency-badge" class="telemetry-chip">⚡ Latency: 0ms</span>
-                                        <span id="chunks-badge" class="telemetry-chip">📦 Chunks: 0</span>
-                                    </div>
-                                </div>
-                                <div class="live-transcript-display" id="live-transcript-box">
-                                    <span id="live-transcript-content" class="text-muted">Dictation will stream here live as you speak...</span>
-                                    <span id="live-cursor" class="live-cursor hidden"></span>
-                                </div>
-                                <div class="streaming-options-row">
-                                    <label class="auto-extract-label">
-                                        <input type="checkbox" id="auto-extract-toggle" checked>
-                                        <span>Live Streaming Auto-Extraction to Table</span>
-                                    </label>
-                                    <span id="streaming-status-note" class="status-msg">WebSocket: Standby</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- File Upload Box -->
-                        <div id="file-box" class="file-uploader-box hidden">
-                            <div class="drop-zone" id="drop-zone" onclick="document.getElementById('audio-file-input').click()">
-                                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                                <p>Click or drag audio file here (.wav, .mp3, .m4a, .ogg)</p>
-                                <span id="selected-file-name" class="file-tag">No file selected</span>
-                            </div>
-                            <input type="file" id="audio-file-input" accept="audio/*" class="hidden" onchange="handleFileSelected(event)">
-                            <div class="transcribe-action-row" style="margin-top: 0.75rem;">
-                                <button id="transcribe-btn" class="btn btn-secondary" onclick="transcribeAudio()" disabled>
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                                    Transcribe Uploaded File
-                                </button>
-                                <span id="transcribe-status" class="status-msg"></span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Prescription Text Area -->
-                    <div class="textarea-container">
-                        <textarea id="rx-input-text" class="form-textarea" placeholder="Enter clinical prescription note or transcribe voice above... (e.g. 'Take one Cefpodoxime proxetil 200 mg tablet twice daily after meals for 7 days...')"></textarea>
-                    </div>
-
-                    <!-- Quick Sample Pills -->
-                    <div class="sample-pills-row">
-                        <span class="sample-label">Quick Samples:</span>
-                        <button class="pill-btn" onclick="loadSample(1)">5-Med Complex Rx</button>
-                        <button class="pill-btn" onclick="loadSample(2)">Respiratory & Inhaler</button>
-                        <button class="pill-btn" onclick="loadSample(3)">Titration & Grammar</button>
-                        <button class="pill-btn" onclick="loadSample(4)">Topicals & Drops</button>
-                    </div>
-
-                    <!-- Model Settings & Extraction Trigger -->
-                    <div class="extraction-footer">
-                        <div class="footer-config">
-                            <div class="config-field mini">
-                                <label for="llm-model-select">LLM Engine</label>
-                                <select id="llm-model-select" class="form-select mini">
-                                    <option value="Llama 3.2 3B">Llama 3.2 3B</option>
-                                    <option value="Llama 3.2 1B">Llama 3.2 1B</option>
-                                    <option value="Llama 3.1 8B">Llama 3.1 8B</option>
-                                </select>
-                            </div>
-                            <div class="config-field mini">
-                                <label for="device-select">Compute Device</label>
-                                <select id="device-select" class="form-select mini">
-                                    <option value="cpu">CPU (Auto Multi-Thread)</option>
-                                    <option value="cuda">CUDA GPU</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <button id="run-extract-btn" class="btn btn-primary" onclick="runExtraction(null, true)">
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                            <span>Run LangGraph Extraction</span>
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Right Column: Agentic Workflow & Results -->
-                <div class="card glass-card output-card">
-                    <div class="card-header">
-                        <div class="card-title-group">
-                            <span class="step-num">02</span>
-                            <div>
-                                <h2 class="card-title">Structured Medication Output</h2>
-                                <p class="card-desc">Validated 7-column clinical fields with anti-drift guarantee.</p>
-                            </div>
-                        </div>
-                        <div class="export-actions">
-                            <button class="btn btn-sm btn-ghost" onclick="exportToCSV()" title="Export CSV">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                                CSV
-                            </button>
-                            <button class="btn btn-sm btn-ghost" onclick="copyTableJSON()" title="Copy JSON">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                                JSON
-                            </button>
-                            <button class="btn btn-sm btn-ghost" onclick="addNewRow()" title="Add Custom Row">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                                Add Row
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Progress Pipeline Visualizer -->
-                    <div id="progress-pipeline" class="progress-pipeline hidden">
-                        <div class="pipeline-step" id="step-supervisor">
-                            <div class="step-icon">1</div>
-                            <span>Supervisor</span>
-                        </div>
-                        <div class="pipeline-connector"></div>
-                        <div class="pipeline-step" id="step-agents">
-                            <div class="step-icon">2</div>
-                            <span>Parallel Agents</span>
-                        </div>
-                        <div class="pipeline-connector"></div>
-                        <div class="pipeline-step" id="step-validator">
-                            <div class="step-icon">3</div>
-                            <span>Validator Loop</span>
-                        </div>
-                        <div class="pipeline-connector"></div>
-                        <div class="pipeline-step" id="step-export">
-                            <div class="step-icon">4</div>
-                            <span>DB & Sync</span>
-                        </div>
-                    </div>
-
-                    <!-- Interactive Table Container -->
-                    <div class="table-responsive">
-                        <table id="rx-table" class="clinical-table">
-                            <thead>
-                                <tr>
-                                    <th>#</th>
-                                    <th>Drug Name</th>
-                                    <th>Strength</th>
-                                    <th>Frequency</th>
-                                    <th>Duration</th>
-                                    <th>Route</th>
-                                    <th>Primary Instruction</th>
-                                    <th>Additional Instruction</th>
-                                    <th class="actions-col">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="rx-table-body">
-                                <tr>
-                                    <td colspan="9" class="empty-state">
-                                        <div class="empty-content">
-                                            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                                            <p>No prescription extracted yet. Record voice note or enter text on the left.</p>
-                                        </div>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <!-- Metrics / Metadata Bar -->
-                    <div class="metrics-bar">
-                        <span id="metric-meds" class="metric-item"><strong>0</strong> Medications</span>
-                        <span id="metric-latency" class="metric-item"><strong>0.00s</strong> Agent Latency</span>
-                        <span id="metric-process" class="metric-item">Process: <strong>Default</strong></span>
-                    </div>
-                </div>
-
+                <button id="btn-clear" class="btn btn-clear" onclick="clearAll()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <polyline points="23 4 23 10 17 10"/>
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                    </svg>
+                    <span>Clear</span>
+                </button>
             </div>
-        </section>
 
-        <!-- VIEW 2: HISTORY & AUDIT LOGS -->
-        <section id="view-history" class="view-panel hidden">
-            <div class="card glass-card history-card">
-                <div class="card-header">
-                    <div class="card-title-group">
-                        <h2 class="card-title">Prescription History & Audit Trail</h2>
-                        <p class="card-desc">Synchronized in real-time with SQLite database (rx_history.db).</p>
-                    </div>
-                    <button class="btn btn-secondary btn-sm" onclick="loadHistory()">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                        Refresh
-                    </button>
+            <!-- Status Indicator Row -->
+            <div class="status-indicator-row">
+                <div class="status-item" id="status-recording-state">
+                    <span class="status-dot dot-idle" id="record-status-dot"></span>
+                    <span id="record-status-text">Idle</span>
                 </div>
+                <div class="status-item" id="status-vad">
+                    <span class="status-dot dot-gray" id="vad-status-dot"></span>
+                    <span>Voice Activity</span>
+                </div>
+                <div class="status-item" id="status-triton">
+                    <span class="status-dot dot-green"></span>
+                    <span id="triton-status-text">Triton: Connected</span>
+                </div>
+                <div class="status-item" id="status-latency" style="margin-left: auto;">
+                    <span class="status-dot dot-blue" style="background-color: #0284c7;"></span>
+                    <span id="latency-telemetry-text">⚡ Engine: Sub-Second SQL Flowsheet (&lt; 15ms)</span>
+                </div>
+            </div>
+
+            <!-- LIVE TRANSCRIPTION Section -->
+            <section class="section-container">
+                <div class="section-header-label">LIVE TRANSCRIPTION</div>
+                <div class="transcription-box-wrapper">
+                    <textarea 
+                        id="live-transcription-input" 
+                        class="transcription-textarea" 
+                        placeholder="Waiting for speech..."
+                        oninput="onTranscriptUserEdit(this.value)"
+                        onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); if(this.value.trim()) processPrescription(this.value.trim(), true); }"
+                        onblur="if(this.value.trim()) processPrescription(this.value.trim(), true);"
+                    ></textarea>
+                </div>
+            </section>
+
+            <!-- + Add Medicine Manually Accordion -->
+            <section class="manual-add-section">
+                <div class="manual-add-toggle" onclick="toggleManualAddPanel()">
+                    <div class="toggle-left">
+                        <span class="plus-icon">+</span>
+                        <span class="toggle-title">Add Medicine Manually</span>
+                    </div>
+                    <span class="chevron-icon" id="manual-add-chevron">▼</span>
+                </div>
+                <div class="manual-add-panel hidden" id="manual-add-panel">
+                    <div class="manual-add-form">
+                        <div class="form-group drug-select-group">
+                            <label>Search Drug Database</label>
+                            <input type="text" id="manual-drug-search" placeholder="Type to search e.g. Paracetamol, Aten..." oninput="onManualDrugSearch(this.value)">
+                            <div id="manual-drug-dropdown" class="autocomplete-dropdown hidden"></div>
+                        </div>
+                        <div class="form-group small">
+                            <label>Dose</label>
+                            <input type="text" id="manual-dose" placeholder="e.g. 500" value="">
+                        </div>
+                        <div class="form-group small">
+                            <label>Unit</label>
+                            <select id="manual-dose-unit">
+                                <option value="mg">mg</option>
+                                <option value="mL">mL</option>
+                                <option value="CAP">CAP</option>
+                                <option value="TAB">TAB</option>
+                                <option value="g">g</option>
+                                <option value="mcg">mcg</option>
+                                <option value="puff">puff</option>
+                                <option value="drop(s)">drop(s)</option>
+                            </select>
+                        </div>
+                        <div class="form-group medium">
+                            <label>Schedule</label>
+                            <select id="manual-schedule">
+                                <option value="">-- Select Schedule --</option>
+                                <option value="Twice a day (1-0-1)">Twice a day (1-0-1)</option>
+                                <option value="Once a day (1-0-0)">Once a day (1-0-0)</option>
+                                <option value="Thrice a day (1-1-1)">Thrice a day (1-1-1)</option>
+                                <option value="Four times a day (1-1-1-1)">Four times a day (1-1-1-1)</option>
+                                <option value="Once a day (bedtime)">Once a day (bedtime) (0-0-1)</option>
+                                <option value="Twice a day (1-1-0)">Twice a day (1-1-0)</option>
+                                <option value="Twice a day (0-1-1)">Twice a day (0-1-1)</option>
+                                <option value="If Required (SOS)">If Required (SOS)</option>
+                            </select>
+                        </div>
+                        <div class="form-group medium">
+                            <label>Route</label>
+                            <select id="manual-route">
+                                <option value="ORAL">ORAL</option>
+                                <option value="RT">RT</option>
+                                <option value="PEG">PEG</option>
+                                <option value="NGT/NJ">NGT/NJ</option>
+                                <option value="IV">IV</option>
+                                <option value="IM">IM</option>
+                                <option value="TOPICAL">TOPICAL</option>
+                            </select>
+                        </div>
+                        <div class="form-group small">
+                            <label>Days</label>
+                            <input type="text" id="manual-days" placeholder="e.g. 5 days" value="">
+                        </div>
+                        <div class="form-group medium">
+                            <label>Instruction</label>
+                            <input type="text" id="manual-instruction" placeholder="e.g. after meals" value="">
+                        </div>
+                        <div class="form-group btn-group">
+                            <button class="btn btn-add-submit" onclick="submitManualMedicine()">Add to Table</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Did-You-Mean Interactive Notification Banner -->
+            <div id="did-you-mean-banner" class="did-you-mean-banner hidden">
+                <div class="dym-content">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/>
+                        <line x1="12" y1="8" x2="12" y2="12"/>
+                        <line x1="12" y1="16" x2="12.01" y2="16"/>
+                    </svg>
+                    <span id="dym-message">Medicine not found in database. Did you mean <strong>Paracetamol</strong>?</span>
+                </div>
+                <div class="dym-actions">
+                    <button class="btn-dym-yes" onclick="acceptDidYouMean()">Yes</button>
+                    <button class="btn-dym-no" onclick="rejectDidYouMean()">No</button>
+                </div>
+            </div>
+
+            <!-- EXTRACTED MEDICATIONS Table Section -->
+            <section class="section-container">
+                <div class="section-header-label">EXTRACTED MEDICATIONS</div>
                 <div class="table-responsive">
-                    <table class="clinical-table history-table">
+                    <table id="rx-table" class="dmh-clinical-table">
                         <thead>
                             <tr>
-                                <th>ID</th>
-                                <th>Timestamp</th>
-                                <th>Process</th>
-                                <th>Input Prescription Transcript</th>
-                                <th>Extracted Meds</th>
-                                <th>Latency</th>
-                                <th>Actions</th>
+                                <th>Drug Name</th>
+                                <th>Dose</th>
+                                <th>Dose Unit</th>
+                                <th>Schedule</th>
+                                <th>Route</th>
+                                <th class="instruction-header">Instruction</th>
+                                <th>Days</th>
+                                <th class="actions-col">Actions</th>
                             </tr>
                         </thead>
-                        <tbody id="history-table-body">
+                        <tbody id="rx-table-body">
                             <tr>
-                                <td colspan="7" class="empty-state">Loading history...</td>
+                                <td colspan="8" class="empty-state">
+                                    No medications extracted yet — start recording to fill this table.
+                                </td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
+            </section>
+
+            <!-- Bottom Save Action Row -->
+            <div class="bottom-action-row">
+                <button id="btn-save-prescription" class="btn btn-save-prescription" onclick="savePrescription()">
+                    <span>Save Prescription</span>
+                    <span class="checkmark">✓</span>
+                </button>
             </div>
-        </section>
-    </main>
+
+        </div>
+    </div>
+
+    <!-- Hidden canvas for audio waveform monitoring -->
+    <canvas id="waveform-canvas" width="400" height="80" style="display:none;"></canvas>
+    <audio id="audio-preview" style="display:none;"></audio>
 
     <!-- Notification Toast -->
     <div id="toast" class="toast hidden"></div>
 
-    <script src="app.js"></script>
+    <script src="app.js?v=whisper_ayush_gpu_v3"></script>
 </body>
 </html>

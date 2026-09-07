@@ -68,6 +68,9 @@ node_modules/
 # Local Model Weights & Fine-Tuned Checkpoints
 Whisper_Ayush/
 */Whisper_Ayush/
+Whisper_Ayush_ct2/
+*/Whisper_Ayush_ct2/
+scratch_*.py
 
 # IDE & OS Generated Files
 .vscode/

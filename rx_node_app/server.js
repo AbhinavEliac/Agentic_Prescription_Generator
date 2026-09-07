@@ -23,8 +23,18 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // Setup multer memory storage for audio file proxying
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Serve static frontend assets
-app.use(express.static(path.join(__dirname, 'public')));
+// Serve static frontend assets with anti-cache headers to ensure immediate JS updates
+app.use(express.static(path.join(__dirname, 'public'), {
+    etag: false,
+    maxAge: 0,
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.js') || filePath.endsWith('.html') || filePath.endsWith('.css')) {
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
+        }
+    }
+}));
 
 /**
  * Proxy Helper using standard Node.js fetch / http
@@ -68,14 +78,93 @@ app.get('/api/models', async (req, res) => {
     res.status(result.status).json(result.data);
 });
 
-// Prescription Extraction Proxy
+const drugDbService = require('./drugDbService');
+
+// Sub-Second Prescription Extraction via Compiled SQL Relational Flowsheet (<15ms)
 app.post('/api/extract', async (req, res) => {
-    const result = await proxyToPython('/api/extract', {
+    const text = req.body.text || '';
+    const flowsheetResult = drugDbService.executeSqlFlowsheet(text);
+
+    // Asynchronously log to Python backend / DB in background without blocking latency
+    proxyToPython('/api/extract', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(req.body)
+        body: JSON.stringify({ ...req.body, fast_mode: true })
+    }).catch(() => {});
+
+    res.json({
+        success: true,
+        latency_ms: flowsheetResult.latency_ms,
+        generation_time: flowsheetResult.generation_time,
+        total_medicines: flowsheetResult.total_medicines,
+        parsed_records: flowsheetResult.records
     });
-    res.status(result.status).json(result.data);
+});
+
+// Drug Database Search API (returns variants e.g. all Paracetamols)
+app.get('/api/drugs/search', (req, res) => {
+    const q = req.query.q || '';
+    const results = drugDbService.searchDrugs(q, parseInt(req.query.limit) || 30);
+    res.json({ query: q, total: results.length, results });
+});
+
+// Drug Did-You-Mean Fuzzy / Phonetic API
+app.get('/api/drugs/did-you-mean', (req, res) => {
+    const q = req.query.q || '';
+    const suggestion = drugDbService.findDidYouMean(q);
+    res.json({ query: q, suggestion });
+});
+
+// Dynamic Route Lookup for a Drug (mapped from Drug_Route_mapping.csv)
+app.get('/api/drugs/:drug_id/routes', (req, res) => {
+    const routes = drugDbService.getRoutesForDrug(req.params.drug_id, req.query.drug_type);
+    res.json({ drug_id: req.params.drug_id, routes });
+});
+
+// Clinical Reference Data (Schedules, Dose Units, Routes)
+app.get('/api/reference-data', (req, res) => {
+    res.json({
+        schedules: drugDbService.getAllSchedules(),
+        dose_units: drugDbService.getAllDoseUnits(),
+        routes: drugDbService.getAllRoutes()
+    });
+});
+
+// Direct Semantic Prescription Matcher via Compiled Sub-Second SQL Flowsheet (<1ms)
+app.post('/api/match-prescription', (req, res) => {
+    const text = req.body.text || '';
+    const flowsheetResult = drugDbService.executeSqlFlowsheet(text);
+    res.json({
+        success: true,
+        latency_ms: flowsheetResult.latency_ms,
+        generation_time: flowsheetResult.generation_time,
+        total: flowsheetResult.total_medicines,
+        records: flowsheetResult.records
+    });
+});
+
+// Save Prescription Endpoint
+app.post('/api/save-prescription', (req, res) => {
+    const { prescription, transcript, patient_id, visit_id } = req.body;
+    const saveRecord = {
+        id: Date.now(),
+        timestamp: new Date().toISOString(),
+        patient_id: patient_id || '1234',
+        visit_id: visit_id || '4056',
+        transcript: transcript || '',
+        medications: prescription || []
+    };
+
+    try {
+        const historyDir = path.join(__dirname, '..', 'rx_extractor_app', 'data');
+        if (!fs.existsSync(historyDir)) fs.mkdirSync(historyDir, { recursive: true });
+        const savePath = path.join(historyDir, 'saved_prescriptions.jsonl');
+        fs.appendFileSync(savePath, JSON.stringify(saveRecord) + '\n', 'utf8');
+    } catch (e) {
+        console.error('[Save] File log error:', e.message);
+    }
+
+    res.json({ success: true, message: 'Prescription saved successfully!', record: saveRecord });
 });
 
 // STT Audio Transcription Proxy

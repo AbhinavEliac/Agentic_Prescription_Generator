@@ -15,8 +15,36 @@ from agents.utils import (
     segment_prescription,
 )
 import prompt
+import os
+import json
 
 DOSAGE_REGEX = r"\d+(?:\.\d+)?\s*(?:mg(?:\/ml|\/g)?|g|mcg|µg|ml|l|iu|units?|%|meq|puffs?|drops?|tablets?|capsules?|sachets?|vials?)"
+
+_DRUG_STRENGTHS_MAP = None
+
+def _get_drug_strengths_map():
+    global _DRUG_STRENGTHS_MAP
+    if _DRUG_STRENGTHS_MAP is None:
+        _DRUG_STRENGTHS_MAP = {}
+        db_path = os.path.join(os.path.dirname(__file__), "..", "..", "Drug_databse", "drugList.json")
+        if os.path.exists(db_path):
+            try:
+                with open(db_path, "r", encoding="utf-8") as f:
+                    data = json.load(f).get("drugData", [])
+                    for item in data:
+                        raw_name = item.get("drug_name", "").upper()
+                        base = re.sub(r"\b(TAB|TABS|TABLET|TABLETS|CAP|CAPS|CAPSULE|CAPSULES|SYP|SYRUP|INJ|INJECTION|DROPS)\b", "", raw_name)
+                        base = re.sub(r"\b\d+(?:\.\d+)?\s*(MG|G|MCG|ML|L|IU|%)\b", "", base)
+                        base = re.sub(r"[^\w\s]", "", base).strip()
+                        strengths = re.findall(r"(\d+(?:\.\d+)?)\s*(?:MG|G|MCG|ML|L|IU|%)\b", raw_name)
+                        if base:
+                            if base not in _DRUG_STRENGTHS_MAP:
+                                _DRUG_STRENGTHS_MAP[base] = set()
+                            for s in strengths:
+                                _DRUG_STRENGTHS_MAP[base].add(s)
+            except Exception:
+                pass
+    return _DRUG_STRENGTHS_MAP
 
 
 def medicine_strength_agent(state: AgenticRxState, llm: Any = None) -> Dict[str, Any]:
@@ -82,26 +110,57 @@ def medicine_strength_agent(state: AgenticRxState, llm: Any = None) -> Dict[str,
                 doses = list(re.finditer(DOSAGE_REGEX, clause, re.IGNORECASE))
                 
                 if doses:
-                    first_dose_match = doses[0]
-                    first_dose_end = first_dose_match.end()
-                    first_dose_txt = first_dose_match.group(0).strip()
-                    
-                    raw_lead = clause[:first_dose_match.start()].strip()
+                    raw_lead = clause[:doses[0].start()].strip()
                     cleaned_name = re.sub(FORM_PATTERN, "", raw_lead).strip()
                     cleaned_name = re.sub(ACTION_VERBS_PATTERN, "", cleaned_name).strip()
                     cleaned_name = re.sub(r"(?i)^(?:take|administer|give|start|prescribe|consume|dissolve|inhale|apply|put|instill|inject|infuse)\s+", "", cleaned_name).strip()
                     cleaned_name = re.sub(r"(?i)^(?:of\s+|a\s+|an\s+|the\s+)", "", cleaned_name).strip()
                     cleaned_name = re.sub(r"[\s,;\-]+$", "", cleaned_name).strip()
                     cleaned_name = re.sub(r"\s*,\s*", " ", cleaned_name).strip()
-                    
-                    second_dose_txt = "NONE"
-                    if len(doses) >= 2:
-                        second_dose_cand = doses[1]
-                        gap_text = clause[first_dose_end:second_dose_cand.start()].strip()
-                        if len(gap_text) <= 5 or gap_text.lower() in ("+", "/", "and", "with"):
-                            second_dose_txt = second_dose_cand.group(0).strip()
 
-                    full_drug_name = f"{cleaned_name} {first_dose_txt}".strip()
+                    # Check which integers exist with this medicine in the database
+                    db_map = _get_drug_strengths_map()
+                    base_upper = cleaned_name.upper()
+                    db_strengths = set()
+                    for k, v in db_map.items():
+                        if base_upper in k or k in base_upper:
+                            db_strengths.update(v)
+
+                    # Partition spoken doses
+                    matching_db_doses = []
+                    non_matching_doses = []
+                    for d in doses:
+                        d_txt = d.group(0).strip()
+                        num_m = re.search(r"\d+(?:\.\d+)?", d_txt)
+                        num = num_m.group(0) if num_m else ""
+                        if num and num in db_strengths:
+                            matching_db_doses.append(d_txt)
+                        else:
+                            non_matching_doses.append(d_txt)
+
+                    if len(doses) >= 2:
+                        # Rule 1: medicine + (integer + units) + (integer + units) == second or final integer + units is dose and dose units
+                        order_strength = doses[-1].group(0).strip()
+                        # The earlier integer binds to formulation strength if in database
+                        formulation_strength = doses[0].group(0).strip()
+                        full_drug_name = f"{cleaned_name} {formulation_strength}".strip()
+                    elif len(doses) == 1:
+                        # Rule 2: medicine + (integer + units) == integer is dose only when the database of medicines/drugs do not have those integer + units with their names, else no dose just medicine with name and integer + units within the name
+                        d_txt = doses[0].group(0).strip()
+                        num_m = re.search(r"\d+(?:\.\d+)?", d_txt)
+                        num = num_m.group(0) if num_m else ""
+                        if num and num in db_strengths:
+                            # DB has this integer with medicine name -> NO DOSE!
+                            order_strength = "NONE"
+                            full_drug_name = f"{cleaned_name} {d_txt}".strip()
+                        else:
+                            # DB does not have this integer with medicine name -> integer is dose!
+                            order_strength = d_txt
+                            full_drug_name = cleaned_name
+                    else:
+                        order_strength = "NONE"
+                        full_drug_name = cleaned_name
+
                     full_drug_name = re.sub(r"(?i)^(?:take\s+|administer\s+|give\s+|prescribe\s+|start\s+)?(?:\d+\s+|one\s+|two\s+|three\s+)?(?:of\s+|a\s+|an\s+|the\s+)?", "", full_drug_name).strip()
                     full_drug_name = re.sub(r"(?i)\s+(?:orally|topically|by\s+mouth|inhale|apply|combination)$", "", full_drug_name).strip()
                     full_drug_name = re.sub(r"[\s,;\-]+(?=\s+\d)", "", full_drug_name).strip()
@@ -110,7 +169,7 @@ def medicine_strength_agent(state: AgenticRxState, llm: Any = None) -> Dict[str,
                     extracted_meds.append({
                         "medicine_id": m_id,
                         "drug_name": full_drug_name,
-                        "strength": second_dose_txt,
+                        "strength": order_strength,
                     })
                 else:
                     match_nodose = re.search(
