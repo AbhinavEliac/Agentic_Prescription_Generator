@@ -5,8 +5,50 @@ Central configuration. Edit this file to change the model, storage
 locations, or defaults -- nothing else in the project should need to change.
 """
 import os
+from pathlib import Path
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(BASE_DIR)
+
+# ---------------------------------------------------------------------------
+# Load .env file if present (checks repo root and app directory)
+# ---------------------------------------------------------------------------
+def _load_env_file(path: str):
+    if not os.path.isfile(path):
+        return
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                k = k.strip()
+                v = v.strip().strip("'\"")
+                if k and k not in os.environ:
+                    os.environ[k] = v
+    except Exception:
+        pass
+
+_load_env_file(os.path.join(ROOT_DIR, ".env"))
+_load_env_file(os.path.join(BASE_DIR, ".env"))
+
+# ---------------------------------------------------------------------------
+# Network, Host & Service Ports
+# ---------------------------------------------------------------------------
+HOST = os.environ.get("HOST", "127.0.0.1")
+PORT = int(os.environ.get("PORT", "8080"))
+NODE_PORT = int(os.environ.get("NODE_PORT", "5000"))
+STREAMLIT_PORT = int(os.environ.get("STREAMLIT_PORT", "8501"))
+PYTHON_API_BASE = os.environ.get("PYTHON_API_BASE", f"http://{HOST}:{PORT}")
+WS_STREAM_URL = os.environ.get("WS_STREAM_URL", f"ws://{HOST}:{PORT}/ws/transcribe")
+
+# ---------------------------------------------------------------------------
+# Runtime & Hardware
+# ---------------------------------------------------------------------------
+ENVIRONMENT = os.environ.get("ENVIRONMENT", "development")
+LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO")
+DEVICE = os.environ.get("DEVICE", "auto")
 
 # ---------------------------------------------------------------------------
 # LLM settings (GPT4All, fully offline)
@@ -23,15 +65,16 @@ MODEL_OPTIONS = {
 MODEL_DOWNLOAD_URLS = {
     "qwen2.5-0.5b-instruct-q4_k_m.gguf": "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf",
     "qwen2-1_5b-instruct-q4_0.gguf": "https://huggingface.co/Qwen/Qwen2-1.5B-Instruct-GGUF/resolve/main/qwen2-1_5b-instruct-q4_0.gguf",
-    "DeepSeek-R1-Distill-Qwen-1.5B-Q4_0.gguf": "https://huggingface.co/unsloth/DeepSeek-R1-Distill-Qwen-1.5B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B-Q4_0.gguf",
+    "DeepSeek-R1-Distill-Qwen-1.5B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B-Q4_0.gguf": "https://huggingface.co/unsloth/DeepSeek-R1-Distill-Qwen-1.5B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B-Q4_0.gguf",
 }
-DEFAULT_MODEL_LABEL = "GPT4All (Llama 3 8B)"
-MODEL_NAME = MODEL_OPTIONS[DEFAULT_MODEL_LABEL]
+DEFAULT_MODEL_LABEL = os.environ.get("DEFAULT_MODEL_LABEL", "GPT4All (Llama 3 8B)")
+MODEL_NAME = os.environ.get("DEFAULT_LLM_MODEL", MODEL_OPTIONS.get(DEFAULT_MODEL_LABEL, "Meta-Llama-3-8B-Instruct.Q4_0.gguf"))
+DEFAULT_LLM_MODEL = MODEL_NAME
 
-MAX_TOKENS = 300
-TEMPERATURE = 0.0  # deterministic extraction -- important for medical data
-VERBOSE = False
-ALLOW_DOWNLOAD = True
+MAX_TOKENS = int(os.environ.get("MAX_TOKENS", "300"))
+TEMPERATURE = float(os.environ.get("TEMPERATURE", "0.0"))  # deterministic extraction -- important for medical data
+VERBOSE = os.environ.get("VERBOSE", "false").lower() in ("true", "1", "yes")
+ALLOW_DOWNLOAD = os.environ.get("ALLOW_DOWNLOAD", "true").lower() in ("true", "1", "yes")
 
 # ---------------------------------------------------------------------------
 # Speech-to-Text (STT) Multi-Model Options & Settings
@@ -47,15 +90,16 @@ STT_MODEL_OPTIONS = {
     "OpenAI Whisper Tiny (Lightweight)": "whisper_tiny",
 }
 DEFAULT_STT_MODEL_LABEL = "Whisper Ayush (Fine-Tuned Turbo Rx v1)"
-WHISPER_MODEL = STT_MODEL_OPTIONS[DEFAULT_STT_MODEL_LABEL]
+WHISPER_MODEL = os.environ.get("DEFAULT_STT_MODEL", STT_MODEL_OPTIONS[DEFAULT_STT_MODEL_LABEL])
+DEFAULT_STT_MODEL = WHISPER_MODEL
 
-AYUSH_WHISPER_PATH = os.path.join(os.path.dirname(BASE_DIR), "Whisper_Ayush", "Whisper large", "saved_models_whisper_large", "merged_turbo_rx_v1")
+AYUSH_WHISPER_PATH = os.path.join(ROOT_DIR, "Whisper_Ayush", "Whisper large", "saved_models_whisper_large", "merged_turbo_rx_v1")
 if not os.path.exists(AYUSH_WHISPER_PATH):
     AYUSH_WHISPER_PATH = os.path.join(BASE_DIR, "Whisper_Ayush", "Whisper large", "saved_models_whisper_large", "merged_turbo_rx_v1")
 
 # Choices offered in the Streamlit sidebar -> actual GPT4All device string
 DEVICE_OPTIONS = {"CPU": "cpu", "GPU (CUDA)": "cuda"}
-DEFAULT_DEVICE_LABEL = "GPU (CUDA)"
+DEFAULT_DEVICE_LABEL = "GPU (CUDA)" if DEVICE in ("cuda", "auto") else "CPU"
 
 # ---------------------------------------------------------------------------
 # Embedding model for FAISS (also GPT4All-backed -> stays fully offline)
@@ -66,11 +110,12 @@ EMBEDDINGS_MODEL = "all-MiniLM-L6-v2.gguf2.f16.gguf"
 # Storage locations (all local disk -- this is what survives a page refresh
 # or an app restart)
 # ---------------------------------------------------------------------------
-DATA_DIR = os.path.join(BASE_DIR, "data")
+DATA_DIR = os.path.abspath(os.environ.get("DATA_DIR", os.path.join(BASE_DIR, "data")))
 FAISS_DIR = os.path.join(DATA_DIR, "faiss_index")
-OUTPUT_DIR = os.path.join(DATA_DIR, "outputs")
-AUDIO_DIR = os.path.join(DATA_DIR, "audio_files")
-SQLITE_PATH = os.path.join(DATA_DIR, "app_state.db")
+OUTPUT_DIR = os.path.abspath(os.environ.get("OUTPUT_DIR", os.path.join(DATA_DIR, "outputs")))
+AUDIO_DIR = os.path.abspath(os.environ.get("AUDIO_DIR", os.path.join(DATA_DIR, "audio_files")))
+SQLITE_PATH = os.path.abspath(os.environ.get("SQLITE_PATH", os.path.join(DATA_DIR, "app_state.db")))
+DRUG_DATABASE_DIR = os.path.abspath(os.environ.get("DRUG_DATABASE_DIR", os.path.join(ROOT_DIR, "Drug_databse")))
 
 for _d in (DATA_DIR, FAISS_DIR, OUTPUT_DIR, AUDIO_DIR):
     os.makedirs(_d, exist_ok=True)

@@ -1,8 +1,12 @@
 import os
-p = r"C:\Users\ADMIN\AppData\Local\Programs\Ollama\lib\ollama\cuda_v12"
-os.environ["PATH"] = p + ";" + os.environ["PATH"]
-if hasattr(os, "add_dll_directory") and os.path.exists(p):
-    os.add_dll_directory(p)
+p = os.path.expandvars(r"%LOCALAPPDATA%\Programs\Ollama\lib\ollama\cuda_v12")
+if os.path.exists(p):
+    os.environ["PATH"] = p + ";" + os.environ.get("PATH", "")
+    if hasattr(os, "add_dll_directory"):
+        try:
+            os.add_dll_directory(p)
+        except Exception:
+            pass
 
 import time
 import soundfile as sf

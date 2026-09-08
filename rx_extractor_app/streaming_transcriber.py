@@ -1,9 +1,11 @@
 """
-streaming_transcriber.py
--------------------------
-Real-Time Low-Latency Streaming Speech-to-Text Engine for Clinical Dictation.
-Processes incremental audio frames over WebSockets with sub-second (<1s) latency.
-Powered by SlidingWindowStreamingDecoder and Sub-10ms VAD Engine.
+streaming_transcriber.py [DEPRECATED - MIGRATED TO app.stt.streaming]
+-----------------------------------------------------------------------
+This legacy coordinator has been superseded by:
+1. FastLiveTranscriber in rx_extractor_app/fast_streaming_transcriber.py (CUDA/CTranslate2)
+2. StreamingTranscriber in app/stt/streaming.py (Canonical decoupled ASR streaming)
+
+Retained strictly for backwards-compatibility with test_streaming_engine.py.
 """
 import os
 import io

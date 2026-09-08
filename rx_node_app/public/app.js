@@ -15,24 +15,17 @@ if (typeof window !== 'undefined') {
  * Deenanath Mangeshkar Hospital (DMH) Clinical ASR & Semantic Extraction System.
  * Powers:
  * 1. Live Web Audio Dictation (Start, Stop, Clear) with status indicators (Idle, Voice Activity, Triton)
- * 2. Semantic matching against Drug_databse (drugList.json & Drug_Route_mapping.csv)
- * 3. Phonetic / spelling typo 'Did You Mean?' suggestions (e.g. aracentamol -> Paracetamol)
- * 4. Drug variants dropdown (e.g., all Paracetamols from database, auto-populating dose & dose unit)
- * 5. Dynamic Route dropdown mapped from Drug_Route_mapping.csv for the matched drug_id
+ * 2. Real-time extraction via canonical FastAPI backend (/api/prescription/extract)
+ * 3. Clinical entity verification against canonical DrugRepository
+ * 4. Master formulary drug search and route auto-population
+ * 5. Validated prescription generation and hospital record persistence
  * 6. Doctor speaking habits for schedule (101, 110, 111, 100, 010, 001, 1111, twice daily 101, etc.)
  * 7. Manual medicine entry accordion & autocomplete
  * 8. Save Prescription to hospital record
  */
 
-// In-memory clinical database client cache with O(1) Soundex & Prefix Buckets
+// Minimal client runtime state
 const clinicalDb = {
-    drugs: [],
-    drugsById: new Map(),
-    drugsByBaseName: new Map(),
-    soundexBuckets: new Map(),
-    prefixIndex: new Map(),
-    routesByDrugId: new Map(),
-    routesByDrugType: new Map(),
     isLoaded: false
 };
 
@@ -67,948 +60,78 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 /**
- * Normalizes drug name to base name (removes dosage, form like TAB, CAP, SYP, INJ)
- */
-function cleanDrugBaseName(drugName) {
-    if (!drugName) return '';
-    return drugName
-        .toUpperCase()
-        .replace(/\b\d+['`][sS]\b/g, '')
-        .replace(/\b(TAB|TABS|TABLET|TABLETS|CAP|CAPS|CAPSULE|CAPSULES|SYP|SYRUP|INJ|INJECTION|OINT|OINTMENT|CREAM|CRM|LOT|LOTION|DROPS|GEL|SOLN|SOLUTION|SOL|SUSP|SUSPENSION|RET|RETD|DT|SR|XL|ER|CR|DS|PLUS|FORTE|POWD|PWDR|RESP|NEB|VIAL|SACHET)\b/g, '')
-        .replace(/\b\d+(?:\.\d+)?\s*(MG|G|MCG|ML|L|IU|%|GM)\b/g, '')
-        .replace(/[^\w\s-]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-}
-
-/**
- * Normalizes speech recognition acoustic confusions and misheard brand names.
- */
-function normalizeAsrPhonetics(text) {
-    if (!text) return '';
-    return text
-        .replace(/\b(?:8|eight)\s+(?:and|&)\s+(?:50|fifty)\b/gi, 'Aten 50')
-        .replace(/\b(?:8|eight)\s+(?:and|&)\s+(?:25|twenty\s*five)\b/gi, 'Aten 25')
-        .replace(/\b(?:8|eight)\s+(?:and|&)\s+(?:100|one\s*hundred)\b/gi, 'Aten 100')
-        .replace(/\b(?:8|eight)\s*(?:ten|10)\s+(?:50|fifty)\b/gi, 'Aten 50')
-        .replace(/\b(?:8|eight)\s*(?:ten|10)\s+(?:25|twenty\s*five)\b/gi, 'Aten 25')
-        .replace(/\b(?:8|eight)\s*(?:ten|10)\b/gi, 'Aten')
-        .replace(/\bMetaforamine\b/gi, 'Metformin')
-        .replace(/\bMetaformine\b/gi, 'Metformin')
-        .replace(/\bMetaphormine\b/gi, 'Metformin')
-        .replace(/\bSophramycin\b/gi, 'Soframycin');
-}
-
-/**
- * Soundex algorithm for phonetic matching
- */
-function soundex(s) {
-    if (!s) return '';
-    const a = s.toLowerCase().replace(/ph/g, 'f').split('');
-    const f = a.shift();
-    let r = '';
-    const codes = {
-        a: '', e: '', i: '', o: '', u: '', y: '', h: '', w: '',
-        b: 1, f: 1, p: 1, v: 1,
-        c: 2, g: 2, j: 2, k: 2, q: 2, s: 2, x: 2, z: 2,
-        d: 3, t: 3,
-        l: 4,
-        m: 5, n: 5,
-        r: 6
-    };
-    r = f + a
-        .map(v => codes[v])
-        .filter((v, i, arr) => (i === 0 ? v !== codes[f] : v !== arr[i - 1]))
-        .join('');
-    return (r + '000').slice(0, 4).toUpperCase();
-}
-
-/**
- * Levenshtein distance for typos & missing characters
- */
-function levenshtein(s1, s2) {
-    s1 = (s1 || '').toLowerCase().replace(/ph/g, 'f');
-    s2 = (s2 || '').toLowerCase().replace(/ph/g, 'f');
-    const len1 = s1.length;
-    const len2 = s2.length;
-    const matrix = [];
-
-    for (let i = 0; i <= len1; i++) matrix[i] = [i];
-    for (let j = 0; j <= len2; j++) matrix[0][j] = j;
-
-    for (let i = 1; i <= len1; i++) {
-        for (let j = 1; j <= len2; j++) {
-            const cost = s1[i - 1] === s2[j - 1] ? 0 : 1;
-            matrix[i][j] = Math.min(
-                matrix[i - 1][j] + 1,
-                matrix[i][j - 1] + 1,
-                matrix[i - 1][j - 1] + cost
-            );
-        }
-    }
-    return matrix[len1][len2];
-}
-
-/**
- * Initialize clinical database in browser
+ * Initialize clinical reference data from the canonical backend API
  */
 async function initClinicalDatabase() {
     try {
-        console.log('[DMH] Loading Drug_databse client cache...');
-        // 1. Fetch drugList.json
-        const drugRes = await fetch('/data/drugList.json');
-        if (drugRes.ok) {
-            const drugJson = await drugRes.json();
-            clinicalDb.drugs = drugJson.drugData || [];
-
-            clinicalDb.drugs.forEach(d => {
-                clinicalDb.drugsById.set(String(d.drug_id), d);
-                const base = cleanDrugBaseName(d.drug_name);
-                d.base_name = base;
-                d.soundex = soundex(base);
-
-                if (base) {
-                    if (!clinicalDb.drugsByBaseName.has(base)) {
-                        clinicalDb.drugsByBaseName.set(base, []);
-
-                        // O(1) Soundex Bucket Index
-                        const sx = soundex(base);
-                        if (!clinicalDb.soundexBuckets.has(sx)) clinicalDb.soundexBuckets.set(sx, []);
-                        clinicalDb.soundexBuckets.get(sx).push(base);
-
-                        // O(1) 3-Character Prefix Index
-                        const pref = base.substring(0, 3);
-                        if (!clinicalDb.prefixIndex.has(pref)) clinicalDb.prefixIndex.set(pref, []);
-                        clinicalDb.prefixIndex.get(pref).push(base);
-                    }
-                    clinicalDb.drugsByBaseName.get(base).push(d);
-                }
-            });
-
-            // Bidirectional aliases for INN / British vs US ASR transcriptions (e.g. AMOXICILLIN <-> AMOXYCILLIN)
-            const COMMON_DRUG_ALIASES = [
-                ['AMOXICILLIN', 'AMOXYCILLIN'],
-                ['PARACETAMOL', 'ACETAMINOPHEN'],
-                ['PANTOPRAZOL', 'PANTOPRAZOLE'],
-                ['OMEPRAZOL', 'OMEPRAZOLE'],
-                ['RABEPRAZOL', 'RABEPRAZOLE'],
-                ['ESOMEPRAZOL', 'ESOMEPRAZOLE'],
-                ['CIPROFLOXACIN', 'CIPROFLOXACINE'],
-                ['LEVOFLOXACIN', 'LEVOFLOXACINE'],
-                ['AZITHROMYCIN', 'AZITHROMYCINE'],
-                ['METFORMIN', 'METPHORMIN'],
-                ['METFORMIN', 'METAFORAMINE'],
-                ['METFORMIN', 'METAFORMINE'],
-                ['SOFRAMYCIN', 'SOPHRAMYCIN'],
-                ['ATEN', 'ATENOLOL'],
-                ['AMLODIPIN', 'AMLODIPINE'],
-                ['CEFIXIM', 'CEFIXIME'],
-                ['CEFPODOXIM', 'CEFPODOXIME'],
-                ['CEFUROXIM', 'CEFUROXIME'],
-                ['CETRIZINE', 'CETIRIZINE'],
-                ['LEVOCETRIZINE', 'LEVOCETIRIZINE'],
-                ['MONTELUKAST', 'MONTELEKAST'],
-                ['DICLOFENAC', 'DICLOFENACK'],
-                ['IBUPROFEN', 'IBOPROFEN'],
-                ['DOXYCYCLINE', 'DOXICYCLINE'],
-                ['CLOTRIMAZOLE', 'CLOTRIMAZOL'],
-                ['FLUCONAZOLE', 'FLUCONAZOL'],
-                ['OXYMETAZOLINE', 'OXIMETHAZOLINE'],
-                ['GABAPENTIN', 'GABAPENTINE'],
-                ['PREGABALIN', 'PREGABALINE'],
-                ['METRONIDAZOLE', 'METRONIDAZOL'],
-                ['ATORVASTATIN', 'ATORVASTATION'],
-                ['ROSUVASTATIN', 'ROSUVASTATION'],
-                ['DOMPERIDONE', 'DOMPERIDON'],
-                ['RANITIDINE', 'RANITIDIN']
-            ];
-
-            const registerAlias = (name, list) => {
-                clinicalDb.drugsByBaseName.set(name, list);
-                const sx = soundex(name);
-                if (!clinicalDb.soundexBuckets.has(sx)) clinicalDb.soundexBuckets.set(sx, []);
-                if (!clinicalDb.soundexBuckets.get(sx).includes(name)) clinicalDb.soundexBuckets.get(sx).push(name);
-                const pref = name.substring(0, 3);
-                if (!clinicalDb.prefixIndex.has(pref)) clinicalDb.prefixIndex.set(pref, []);
-                if (!clinicalDb.prefixIndex.get(pref).includes(name)) clinicalDb.prefixIndex.get(pref).push(name);
-            };
-
-            COMMON_DRUG_ALIASES.forEach(([a, b]) => {
-                const listA = clinicalDb.drugsByBaseName.get(a);
-                const listB = clinicalDb.drugsByBaseName.get(b);
-                if (listA && !listB) {
-                    registerAlias(b, listA);
-                } else if (listB && !listA) {
-                    registerAlias(a, listB);
-                }
-            });
-
-            console.log(`[DMH] Loaded ${clinicalDb.drugs.length} drugs into memory (${clinicalDb.soundexBuckets.size} Soundex buckets).`);
+        console.log('[DMH] Connecting to canonical clinical API gateway...');
+        const refRes = await fetch('/api/reference-data');
+        if (refRes.ok) {
+            const refData = await refRes.json();
+            console.log(`[DMH] Connected. Schedules: ${refData.schedules ? refData.schedules.length : 0}, Routes: ${refData.routes ? refData.routes.length : 0}.`);
         }
-
-        // 2. Fetch Drug_Route_mapping.csv
-        const routeRes = await fetch('/data/Drug_Route_mapping.csv');
-        if (routeRes.ok) {
-            const routeText = await routeRes.text();
-            const lines = routeText.split(/\r?\n/).filter(l => l.trim().length > 0);
-            for (let i = 1; i < lines.length; i++) {
-                const parts = lines[i].split(',').map(p => p.trim());
-                if (parts.length >= 4) {
-                    const drugId = parts[0];
-                    const drugType = (parts[1] || '').toLowerCase();
-                    const routeCode = (parts[3] || '').toUpperCase();
-
-                    if (drugId && routeCode) {
-                        if (!clinicalDb.routesByDrugId.has(drugId)) {
-                            clinicalDb.routesByDrugId.set(drugId, []);
-                        }
-                        const existing = clinicalDb.routesByDrugId.get(drugId);
-                        if (!existing.includes(routeCode)) existing.push(routeCode);
-                    }
-
-                    if (drugType && routeCode) {
-                        if (!clinicalDb.routesByDrugType.has(drugType)) {
-                            clinicalDb.routesByDrugType.set(drugType, new Set());
-                        }
-                        clinicalDb.routesByDrugType.get(drugType).add(routeCode);
-                    }
-                }
-            }
-            console.log(`[DMH] Loaded route mappings for ${clinicalDb.routesByDrugId.size} drugs.`);
-        }
-
         clinicalDb.isLoaded = true;
     } catch (err) {
-        console.warn('[DMH] Client database load notice:', err.message);
+        console.warn('[DMH] Clinical API connection notice:', err.message);
     }
 }
 
 /**
- * Get mapped routes for a specific drug_id and drug_type
+ * Asynchronous drug search querying canonical backend API
  */
-function getRoutesForDrug(drugId, drugType = '') {
-    const dId = String(drugId || '').trim();
-    if (dId && clinicalDb.routesByDrugId.has(dId)) {
-        const routes = [...clinicalDb.routesByDrugId.get(dId)];
-        return routes.sort((a, b) => (a === 'ORAL' ? -1 : b === 'ORAL' ? 1 : a.localeCompare(b)));
+async function searchDrugsApi(query, limit = 25) {
+    if (!query || !query.trim()) return [];
+    try {
+        const res = await fetch(`/api/drugs/search?q=${encodeURIComponent(query)}&limit=${limit}`);
+        if (res.ok) {
+            const data = await res.json();
+            return data.results || [];
+        }
+    } catch (e) {
+        console.warn('[DMH] Drug search API error:', e.message);
     }
+    return [];
+}
 
-    const dType = (drugType || '').trim().toLowerCase();
-    if (dType && clinicalDb.routesByDrugType.has(dType)) {
-        return Array.from(clinicalDb.routesByDrugType.get(dType)).sort((a, b) =>
-            a === 'ORAL' ? -1 : b === 'ORAL' ? 1 : a.localeCompare(b)
-        );
+/**
+ * Asynchronous Did-You-Mean phonetic recommendation querying canonical backend API
+ */
+async function findDidYouMeanApi(query) {
+    if (!query || !query.trim()) return null;
+    try {
+        const res = await fetch(`/api/drugs/did-you-mean?q=${encodeURIComponent(query)}`);
+        if (res.ok) {
+            const data = await res.json();
+            return data.suggestion || null;
+        }
+    } catch (e) {
+        console.warn('[DMH] Did-you-mean API error:', e.message);
     }
+    return null;
+}
 
+/**
+ * Permissible anatomical routes for a drug (delegates to standard clinical route catalog)
+ */
+function getRoutesForDrug(drugId) {
     return ['ORAL', 'RT', 'PEG', 'IV', 'IM', 'TOPICAL', 'INHALATION', 'OPHTHALMIC', 'NASAL'];
 }
 
-const INSTRUCTION_STOPWORDS = new Set([
-    'take', 'give', 'start', 'prescribe', 'add', 'use', 'apply', 'stop', 'continue', 'discontinue',
-    'tab', 'tablet', 'tabs', 'tablets', 'cap', 'capsule', 'caps', 'capsules',
-    'syrup', 'syp', 'inj', 'injection', 'drops', 'drop', 'orally', 'oral',
-    'daily', 'twice', 'thrice', 'times', 'time', 'day', 'days', 'week', 'weeks', 'month', 'months', 'year', 'years',
-    'once', 'bid', 'tid', 'qid', 'sos', 'stat', 'od', 'bd', 'tds', 'hs',
-    'for', 'after', 'before', 'with', 'without', 'at', 'in', 'on', 'to', 'from', 'by', 'of', 'and', 'then', 'also', 'plus',
-    'next', 'second', 'third', 'medicine', 'medicines', 'drug', 'drugs', 'dose', 'dosage',
-    'meals', 'meal', 'food', 'eating', 'breakfast', 'lunch', 'dinner',
-    'water', 'milk', 'warm', 'cold', 'regular', 'hot', 'fluids', 'liquid', 'liquids',
-    'empty', 'stomach', 'fasting', 'bedtime', 'night', 'sleep', 'morning', 'noon', 'afternoon', 'evening',
-    'avoid', 'spicy', 'oily', 'alcohol', 'driving', 'smoking', 'rest', 'walk', 'walks', 'diet', 'bland',
-    'sugar', 'sweets', 'salt', 'steam', 'inhalation',
-    'rinse', 'mouth', 'locally', 'thinly', 'sparingly', 'affected', 'area',
-    'swallow', 'whole', 'chew', 'chewable', 'thoroughly', 'dissolve', 'shake', 'well',
-    'complete', 'course', 'midway', 'consult', 'doctor', 'physician', 'hospital', 'clinic', 'emergency',
-    'strictly', 'plenty', 'gargle',
-    'the', 'a', 'an', 'this', 'that', 'these', 'those', 'patient', 'patients',
-    'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had',
-    'do', 'does', 'did', 'will', 'would', 'shall', 'should', 'can', 'could', 'may', 'might', 'must',
-    'not', 'no', 'yes', 'so', 'because', 'although', 'unless', 'if', 'when', 'whenever', 'case',
-    'fever', 'pain', 'headache', 'cough', 'cold', 'rash', 'vomiting', 'nausea', 'diarrhea', 'infection',
-    'increases', 'increase', 'decreases', 'decrease', 'persists', 'persist', 'worsens', 'worsen',
-    'last', 'lasts', 'lasted', 'lasting', 'more', 'than', 'less', 'come', 'goes', 'tell', 'inform',
-    'blood', 'body', 'skin', 'eyes', 'ears', 'throat', 'chest', 'back', 'neck',
-    'contact', 'call', 'visit', 'see', 'report', 'review',
-    'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'
-]);
-
-/**
- * Search drugs: returns variants for dropdown
- */
-function searchDrugs(query, limit = 25) {
-    if (!query || !query.trim()) return [];
-    const q = query.trim().toUpperCase();
-    const cleanQ = cleanDrugBaseName(q);
-    if (!cleanQ || INSTRUCTION_STOPWORDS.has(cleanQ.toLowerCase())) return [];
-
-    const matches = [];
-    const seenIds = new Set();
-
-    // 1. Exact base name match -> returns all variants (e.g. Paracetamol 500, 650, drops, etc.)
-    if (clinicalDb.drugsByBaseName.has(cleanQ)) {
-        clinicalDb.drugsByBaseName.get(cleanQ).forEach(d => {
-            if (!seenIds.has(d.drug_id)) {
-                matches.push(d);
-                seenIds.add(d.drug_id);
-            }
-        });
-    }
-
-    // 2. Starts with clean query
-    for (const [base, list] of clinicalDb.drugsByBaseName.entries()) {
-        if (base.startsWith(cleanQ) && base !== cleanQ) {
-            list.forEach(d => {
-                if (!seenIds.has(d.drug_id) && matches.length < limit) {
-                    matches.push(d);
-                    seenIds.add(d.drug_id);
-                }
-            });
-        }
-        if (matches.length >= limit) break;
-    }
-
-    // 3. Fallback word-boundary search in drug_name
-    if (matches.length < limit && cleanQ.length >= 3) {
-        try {
-            const wordRegex = new RegExp('\\b' + cleanQ, 'i');
-            for (const d of clinicalDb.drugs) {
-                if (wordRegex.test(d.drug_name) && !seenIds.has(d.drug_id)) {
-                    matches.push(d);
-                    seenIds.add(d.drug_id);
-                    if (matches.length >= limit) break;
-                }
-            }
-        } catch (e) {}
-    }
-
-    return matches.slice(0, limit).map(d => ({
-        drug_id: d.drug_id,
-        drug_code: d.drug_code,
-        drug_name: d.drug_name,
-        drug_type: d.drug_type,
-        base_name: d.base_name,
-        routes: getRoutesForDrug(d.drug_id, d.drug_type)
-    }));
-}
-
-/**
- * Fuzzy & Phonetic match for missing characters / typos ("Did you mean?")
- * Handles "aracentamol" -> "PARACETAMOL", "ugmentin" -> "AUGMENTIN"
- */
-function findDidYouMean(query) {
-    if (!query || !query.trim()) return null;
-    const cleanQ = cleanDrugBaseName(query);
-    if (!cleanQ || cleanQ.length < 4 || INSTRUCTION_STOPWORDS.has(cleanQ.toLowerCase())) return null;
-
-    if (clinicalDb.drugsByBaseName.has(cleanQ)) return null;
-
-    const candidateSet = new Set();
-
-    // 1. Same Soundex bucket
-    const qSoundex = soundex(cleanQ);
-    const soundexMatches = clinicalDb.soundexBuckets.get(qSoundex) || [];
-    soundexMatches.forEach(b => candidateSet.add(b));
-
-    // 2. Missing first-letter check (e.g. aracentamol -> paracetamol)
-    const commonFirstLetters = ['P', 'A', 'C', 'M', 'T', 'D', 'B', 'S', 'L', 'I', 'R', 'N'];
-    for (const letter of commonFirstLetters) {
-        const potential = letter + cleanQ;
-        if (clinicalDb.drugsByBaseName.has(potential)) {
-            candidateSet.add(potential);
-        }
-        const sx = soundex(potential);
-        (clinicalDb.soundexBuckets.get(sx) || []).forEach(b => candidateSet.add(b));
-    }
-
-    // 3. Prefix bucket
-    const pref = cleanQ.substring(0, 3);
-    (clinicalDb.prefixIndex.get(pref) || []).forEach(b => candidateSet.add(b));
-
-    let bestMatch = null;
-    let minDistance = 999;
-
-    // Pruned candidate comparison (<20 candidates instead of thousands)
-    for (const base of candidateSet) {
-        if (base.endsWith(cleanQ) || cleanQ.endsWith(base) || base.includes(cleanQ) || cleanQ.includes(base)) {
-            const diff = Math.abs(base.length - cleanQ.length);
-            if (diff <= 3 && diff < minDistance) {
-                minDistance = diff;
-                bestMatch = base;
-            }
-        }
-
-        const dist = levenshtein(cleanQ, base);
-        const threshold = cleanQ.length <= 4 ? 1 : cleanQ.length <= 7 ? 2 : 3;
-
-        if (dist <= threshold && dist < minDistance) {
-            minDistance = dist;
-            bestMatch = base;
-        }
-    }
-
-    if (bestMatch) {
-        const variants = clinicalDb.drugsByBaseName.get(bestMatch) || [];
-        return {
-            suggested_name: bestMatch,
-            variants: variants.slice(0, 15).map(d => ({
-                drug_id: d.drug_id,
-                drug_code: d.drug_code,
-                drug_name: d.drug_name,
-                drug_type: d.drug_type,
-                routes: getRoutesForDrug(d.drug_id, d.drug_type)
-            }))
-        };
-    }
-
-    return null;
-}
-
-/**
- * Doctor speaking habit schedule parser
- * Understands:
- * - "101", "1-0-1", "1 0 1", "twice daily 101", "twice daily" -> "Twice a day (1-0-1)"
- * - "111", "1-1-1", "1 1 1", "thrice daily", "three times a day" -> "Thrice a day (1-1-1)"
- * - "100", "1-0-0", "1 0 0", "once daily 100", "once a day" -> "Once a day (1-0-0)"
- * - "010", "0-1-0", "afternoon" -> "Once a day (0-1-0)"
- * - "001", "0-0-1", "bedtime", "night", "hs" -> "Once a day (bedtime)"
- * - "110", "1-1-0" -> "Twice a day (1-1-0)"
- * - "011", "0-1-1" -> "Twice a day (0-1-1)"
- * - "1111", "1-1-1-1", "four times a day" -> "Four times a day (1-1-1-1)"
- * - "SOS", "as needed", "if required" -> "If Required (SOS)"
- * - "stat", "immediately" -> "Stat (Immediate single dose only)"
- */
-function parseSchedule(text) {
-    if (!text) return '';
-    const clean = text.toLowerCase().trim();
-
-    // 1. Digital Doctor Notation
-    if (/\b(101|1-0-1|1\s*0\s*1|one\s*zero\s*one|one\s*oh\s*one)\b/.test(clean)) {
-        return 'Twice a day (1-0-1)';
-    }
-    if (/\b(111|1-1-1|1\s*1\s*1|one\s*one\s*one)\b/.test(clean)) {
-        return 'Thrice a day (1-1-1)';
-    }
-    if (/\b(100|1-0-0|1\s*0\s*0|one\s*zero\s*zero)\b/.test(clean)) {
-        return 'Once a day (1-0-0)';
-    }
-    if (/\b(010|0-1-0|0\s*1\s*0|zero\s*one\s*zero)\b/.test(clean)) {
-        return 'Once a day (0-1-0)';
-    }
-    if (/\b(001|0-0-1|0\s*0\s*1|zero\s*zero\s*one)\b/.test(clean)) {
-        return 'Once a day (bedtime)';
-    }
-    if (/\b(110|1-1-0|1\s*1\s*0|one\s*one\s*zero)\b/.test(clean)) {
-        return 'Twice a day (1-1-0)';
-    }
-    if (/\b(011|0-1-1|0\s*1\s*1|zero\s*one\s*one)\b/.test(clean)) {
-        return 'Twice a day (0-1-1)';
-    }
-    if (/\b(1111|1-1-1-1|1\s*1\s*1\s*1)\b/.test(clean)) {
-        return 'Four times a day (1-1-1-1)';
-    }
-
-    // 2. Clinical verbal phrases
-    if (/\b(four times|qid|q\.i\.d)\b/.test(clean)) return 'Four times a day (1-1-1-1)';
-    if (/\b(three times|thrice|tid|t\.i\.d)\b/.test(clean)) return 'Thrice a day (1-1-1)';
-    if (/\b(twice|two times|bid|b\.i\.d)\b/.test(clean)) return 'Twice a day (1-0-1)';
-    if (/\b(bedtime|night|hs|qhs)\b/.test(clean)) return 'Once a day (bedtime)';
-    if (/\b(afternoon)\b/.test(clean)) return 'Once a day (0-1-0)';
-    if (/\b(once daily|once a day|od|q\.d|qday)\b/.test(clean)) return 'Once a day (1-0-0)';
-    if (/\b(sos|if needed|if required|prn)\b/.test(clean)) return 'If Required (SOS)';
-    if (/\b(stat|immediately)\b/.test(clean)) return 'Stat (Immediate single dose only)';
-
-    return '';
-}
-
-/**
- * Generalized Clinical Instruction Parser
- * Captures:
- * 1. Administration timing / meal relation (e.g. 30 mins before breakfast, after meals, on empty stomach, bedtime)
- * 2. Medium & administration technique (e.g. with warm water, with milk, swallow whole, chew thoroughly, gargle, rinse mouth)
- * 3. Precautions, restrictions & lifestyle guidance (e.g. avoid oily and spicy food, complete full course, bed rest)
- * 4. Open Conditional / Contingency Directives (IF / IN CASE OF / WHENEVER <condition> [THEN]? <directive>)
- * 5. Direct Clinical Consult / Follow-up Actions (e.g. consult doctor immediately, review after 5 days)
- */
-function parseInstructions(clauseText) {
-    if (!clauseText) return 'NONE';
-    const text = clauseText.trim();
-    const lower = text.toLowerCase();
-    const instructions = [];
-
-    // 1. PRIMARY INTAKE & MEAL TIMINGS
-    const timedMealMatch = lower.match(/\b(\d+)\s*(?:mins?|minutes?|hrs?|hours?)\s*(before|after)\s*(breakfast|lunch|dinner|meals?|food)\b/i);
-    if (timedMealMatch) {
-        const mealWord = timedMealMatch[3].toLowerCase();
-        instructions.push(`${timedMealMatch[1]} mins ${timedMealMatch[2].toLowerCase()} ${mealWord.startsWith('meal') ? 'meals' : mealWord}`);
-    } else {
-        const mealPattern = lower.match(/\b(?:strictly\s+)?(before|after|with)\s+(breakfast|lunch|dinner|meals?|food|eating)\b/i);
-        if (mealPattern) {
-            const prefix = /strictly/i.test(mealPattern[0]) ? 'strictly ' : '';
-            const prep = mealPattern[1].toLowerCase();
-            let target = mealPattern[2].toLowerCase();
-            if (target === 'food' || target === 'eating') target = 'meals';
-            instructions.push(`${prefix}${prep} ${target}`);
-        } else if (/\b(?:on\s*(?:an?\s*)?empty\s*stomach|empty\s*stomach|fasting)\b/i.test(lower)) {
-            instructions.push('on empty stomach');
-        }
-    }
-
-    // Bedtime / Time of day
-    if (/\b(?:at\s*bedtime|before\s*bed(?:time)?|before\s*sleep|at\s*night)\b/i.test(lower)) {
-        instructions.push('at bedtime');
-    } else if (/\b(?:early\s*morning|in\s*the\s*morning)\b/i.test(lower) && !instructions.some(i => i.includes('breakfast'))) {
-        instructions.push('in the morning');
-    }
-
-    // 2. FLUIDS & METHOD OF INTAKE
-    if (/\bwith\s*(?:warm|hot)\s*water\b/i.test(lower)) {
-        instructions.push('with warm water');
-    } else if (/\bwith\s*(?:cold|regular|clean|fresh|plenty\s*of)?\s*water\b/i.test(lower) && !instructions.some(i => i.includes('warm water'))) {
-        instructions.push('with water');
-    } else if (/\bwith\s*(?:warm\s*)?milk\b/i.test(lower)) {
-        instructions.push('with milk');
-    }
-
-    if (/\b(?:drink\s*plenty\s*of\s*(?:water|fluids?|liquids?)|plenty\s*of\s*(?:fluids?|water)|hydrate\s*well)\b/i.test(lower)) {
-        instructions.push('drink plenty of fluids');
-    }
-
-    if (/\b(?:swallow\s*whole|do\s*not\s*(?:chew|crush))\b/i.test(lower)) {
-        instructions.push('swallow whole (do not chew)');
-    } else if (/\b(?:chew\s*thoroughly|chewable)\b/i.test(lower)) {
-        instructions.push('chew thoroughly');
-    } else if (/\bdissolve\s*in\s*(?:water|half\s*glass\s*water)\b/i.test(lower)) {
-        instructions.push('dissolve in water');
-    } else if (/\bshake\s*well(?:\s*before\s*use)?\b/i.test(lower)) {
-        instructions.push('shake well before use');
-    }
-
-    // Device / Topical / Inhalation / Oral Rinse
-    if (/\brinse\s*mouth(?:\s*after\s*use)?\b/i.test(lower)) {
-        instructions.push('rinse mouth after use');
-    }
-    if (/\b(?:apply\s*(?:thinly|sparingly|locally)|on\s*affected\s*area)\b/i.test(lower)) {
-        instructions.push('apply on affected area');
-    }
-    if (/\b(?:warm\s*water\s*gargle|salt\s*water\s*gargle|gargle)\b/i.test(lower)) {
-        instructions.push('warm water gargle');
-    }
-    if (/\bsteam\s*inhalation\b/i.test(lower)) {
-        instructions.push('steam inhalation');
-    }
-
-    // 3. COURSE, PRECAUTIONS & LIFESTYLE (GENERALIZED)
-    if (/\b(?:complete\s*(?:the\s*)?(?:full\s*)?course|do\s*not\s*stop\s*midway)\b/i.test(lower)) {
-        instructions.push('complete full course');
-    }
-    const avoidMatch = lower.match(/\b(?:strictly\s+)?avoid\s+([^,;\n\.]+)/i);
-    if (avoidMatch) {
-        let what = avoidMatch[1].replace(/\b(?:and\s+then|then|also|take)\b.*/i, '').trim();
-        if (what.length > 2) {
-            instructions.push(`avoid ${what}`);
-        }
-    }
-    if (/\b(?:bed\s*rest|rest)\b/i.test(lower) && !instructions.some(i => i.includes('rest'))) {
-        instructions.push('bed rest');
-    }
-    if (/\b(?:light|bland)\s*diet\b/i.test(lower)) {
-        instructions.push('bland diet');
-    }
-
-    // 4. OPEN CONDITIONAL / CONTINGENCY DIRECTIVES (Generalized Grammar)
-    const conditionalRegex = /\b(?:for\s+)?((?:if|in\s+case\s+(?:of\s+)?|whenever|when|as\s+needed)\s+[^,;\n\.]+(?:,\s*[^,;\n\.]+|\s+(?:then\s+)?[^,;\n\.]+)*)/gi;
-    let condMatch;
-    while ((condMatch = conditionalRegex.exec(text)) !== null) {
-        let condText = condMatch[1].trim();
-        condText = condText.replace(/\b(?:okay|ok|alright|fine|thank\s*you|thanks|please|next|done)\s*$/i, '').trim();
-        condText = condText.replace(/\bconfer(?:red)?\b/gi, 'consult');
-        if (condText.length > 6 && !instructions.some(i => i.toLowerCase().includes(condText.toLowerCase()))) {
-            instructions.push(condText);
-        }
-    }
-
-    // 5. DIRECT CLINICAL ACTION / FOLLOW-UP DIRECTIVES (Standalone)
-    const directActionRegex = /\b((?:consult|contact|report\s+to|visit|see|call|review\s+with|follow\s*up\s+with)\s+(?:the\s+)?(?:doctor|physician|hospital|clinic|specialist|emergency)[^,;\n\.]*)/gi;
-    let actMatch;
-    while ((actMatch = directActionRegex.exec(text)) !== null) {
-        let actText = actMatch[1].trim();
-        actText = actText.replace(/\b(?:okay|ok|alright|fine|thank\s*you|thanks|please|next|done)\s*$/i, '').trim();
-        actText = actText.replace(/\bconfer(?:red)?\b/gi, 'consult');
-        const alreadyInCond = instructions.some(i => i.toLowerCase().includes(actText.toLowerCase()));
-        if (actText.length > 5 && !alreadyInCond) {
-            instructions.push(actText);
-        }
-    }
-
-    const unique = [];
-    for (const inst of instructions) {
-        const cleanInst = inst.replace(/\s+/g, ' ').trim();
-        if (!unique.some(u => u.toLowerCase() === cleanInst.toLowerCase() || cleanInst.toLowerCase().includes(u.toLowerCase()))) {
-            unique.push(cleanInst);
-        }
-    }
-
-    return unique.length > 0 ? unique.join('; ') : 'NONE';
-}
-
-/**
- * Scan segment for drug entity using multi-word n-gram matching and phonetic fallback
- */
-function findDrugInSegment(seg) {
-    if (!seg || !seg.trim()) return null;
-
-    // Tokenize into clean words
-    const tokens = seg.match(/[a-zA-Z0-9\-]+/g) || [];
-    if (tokens.length === 0) return null;
-
-    // 1. Check 3-grams, 2-grams, 1-grams against database base names
-    for (let len = Math.min(3, tokens.length); len >= 1; len--) {
-        for (let i = 0; i <= tokens.length - len; i++) {
-            const gram = tokens.slice(i, i + len).join(' ');
-            const cleanGram = cleanDrugBaseName(gram);
-            if (cleanGram && !INSTRUCTION_STOPWORDS.has(cleanGram.toLowerCase()) && clinicalDb.drugsByBaseName.has(cleanGram)) {
-                return {
-                    matchedBase: cleanGram,
-                    tokenIndex: i,
-                    tokenCount: len,
-                    variants: clinicalDb.drugsByBaseName.get(cleanGram),
-                    didYouMean: null
-                };
-            }
-        }
-    }
-
-    // 2. If no exact database match, evaluate non-stopword tokens for phonetic Did-You-Mean
-    for (const token of tokens) {
-        if (token.length >= 3 && !INSTRUCTION_STOPWORDS.has(token.toLowerCase()) && !/^\d+$/.test(token)) {
-            const dym = findDidYouMean(token);
-            if (dym) {
-                return {
-                    matchedBase: dym.suggested_name,
-                    tokenIndex: tokens.indexOf(token),
-                    tokenCount: 1,
-                    variants: dym.variants,
-                    didYouMean: dym.suggested_name
-                };
-            }
-        }
-    }
-
-    return null;
-}
-
-/**
- * Intelligent Entity-Aware Prescription Clause Segmenter (Client)
- * Scans the transcript text and partitions it into individual medication order clauses
- * based on drug entity occurrences, transition words, and clinical order boundaries.
- */
-/**
- * Helper to partition a sentence containing multiple drugs (Client)
- */
-function partitionMultiDrugSentence(sentence) {
-    const tokens = sentence.match(/[a-zA-Z0-9\-]+/g) || [];
-    if (tokens.length === 0) return [sentence];
-
-    const spans = [];
-    let idx = 0;
-    while (idx < tokens.length) {
-        let matched = false;
-        for (let len = Math.min(3, tokens.length - idx); len >= 1; len--) {
-            const gram = tokens.slice(idx, idx + len).join(' ');
-            const cleanGram = cleanDrugBaseName(gram);
-            if (cleanGram && !INSTRUCTION_STOPWORDS.has(cleanGram.toLowerCase()) && clinicalDb.drugsByBaseName.has(cleanGram)) {
-                spans.push({ startIndex: idx, length: len, base: cleanGram });
-                idx += len;
-                matched = true;
-                break;
-            }
-        }
-        if (!matched) {
-            const tok = tokens[idx];
-            if (tok.length >= 4 && !INSTRUCTION_STOPWORDS.has(tok.toLowerCase()) && !/^\d+$/.test(tok)) {
-                const dym = findDidYouMean(tok);
-                if (dym) {
-                    spans.push({ startIndex: idx, length: 1, base: dym.suggested_name });
-                    idx++;
-                    matched = true;
-                }
-            }
-        }
-        if (!matched) idx++;
-    }
-
-    if (spans.length <= 1) return [sentence];
-
-    const result = [];
-    for (let s = 0; s < spans.length; s++) {
-        const cur = spans[s];
-        const next = spans[s + 1];
-        let startTok = s === 0 ? 0 : cur.startIndex;
-        if (s > 0) {
-            let lookback = cur.startIndex - 1;
-            while (lookback >= 0 && /\b(?:and|also|take|give|start|prescribe|add|apply|plus)\b/i.test(tokens[lookback])) {
-                startTok = lookback;
-                lookback--;
-            }
-        }
-        let endTok = tokens.length;
-        if (next) {
-            let transitionStart = next.startIndex;
-            let lookback = next.startIndex - 1;
-            while (lookback > cur.startIndex && /\b(?:and|also|take|give|start|prescribe|add|apply|plus)\b/i.test(tokens[lookback])) {
-                transitionStart = lookback;
-                lookback--;
-            }
-            endTok = transitionStart;
-        }
-        const sub = tokens.slice(startTok, endTok).join(' ');
-        if (sub.trim()) result.push(sub.trim());
-    }
-    return result.length > 0 ? result : [sentence];
-}
-
-/**
- * Intelligent Entity-Aware Prescription Clause Segmenter (Client)
- * Scans the transcript text and partitions it into individual medication order clauses
- * based on sentence boundaries, action verbs, and drug entity occurrences.
- */
-function segmentPrescriptionClauses(transcriptText) {
-    if (!transcriptText || !transcriptText.trim()) return [];
-
-    const normText = normalizeAsrPhonetics(transcriptText.trim());
-
-    // Split on sentence periods (followed by space or capital), newlines, semicolons, or major transition phrases
-    const rawSentences = normText
-        .split(/(?:[\r\n;]+|(?:\.|\?|!)(?:\s+|$)|(?:\s*,\s*|\s+)(?=(?:and\s+then|then|next\s+(?:medicine|drug)|second\s+medicine|third\s+medicine|also\s+(?:give|take|start|prescribe|add|apply)|plus)\b))+/i)
-        .map(s => s.trim())
-        .filter(Boolean);
-
-    const segments = [];
-    let currentOrder = '';
-
-    for (const sentence of rawSentences) {
-        // Check if this sentence contains a recognized drug entity
-        const drugMatch = findDrugInSegment(sentence);
-
-        if (drugMatch) {
-            const subOrders = partitionMultiDrugSentence(sentence);
-            if (currentOrder.trim()) {
-                segments.push(currentOrder.trim());
-                currentOrder = '';
-            }
-            if (subOrders.length > 1) {
-                for (let i = 0; i < subOrders.length - 1; i++) {
-                    segments.push(subOrders[i]);
-                }
-                currentOrder = subOrders[subOrders.length - 1];
-            } else {
-                currentOrder = sentence;
-            }
-        } else {
-            // No drug in this sentence (e.g. advice / instructions) -> attach to current order
-            if (currentOrder) {
-                currentOrder += '. ' + sentence;
-            } else {
-                currentOrder = sentence;
-            }
-        }
-    }
-
-    if (currentOrder.trim()) {
-        segments.push(currentOrder.trim());
-    }
-
-    return segments.length > 0 ? segments : [normText];
-}
-
-/**
- * Analyze prescription text against Drug_databse semantically
- */
-function analyzePrescriptionText(transcriptText) {
-    if (!transcriptText || !transcriptText.trim()) return [];
-
-    const segments = segmentPrescriptionClauses(transcriptText.trim());
-    const results = [];
-
-    for (const seg of segments) {
-        // Stage 1: Identify drug entity in segment
-        const drugMatch = findDrugInSegment(seg);
-        if (!drugMatch) {
-            // Out-of-database rejection: do NOT add anything if no drug or phonetic candidate matches
-            continue;
-        }
-
-        const matchedVariants = drugMatch.variants || [];
-        if (matchedVariants.length === 0) continue;
-
-        let primaryDrug = matchedVariants[0];
-        const didYouMean = drugMatch.didYouMean;
-
-        // Stage 2: Formulation Strength vs. Prescribed Order Dosage Disambiguation
-        // User Clinical Rules:
-        // 1) medicine + (integer + units) + (integer + units) == second or final integer + units is dose and dose units
-        // 2) medicine + (integer + units) == integer is dose only when the database of medicines/drugs do not have those integer + units with their names, else no dose just medicine with name and integer + units within the name
-        // 3) If no dose given -> NO default dose is populated. dose and dose_unit remain empty.
-
-        const getNumbersFromDrug = (drugName) => (drugName || '').match(/\d+(?:\.\d+)?/g) || [];
-
-        // Step B: Isolate core medication specification from trailing duration and instructions
-        const coreMedSection = seg.split(/\b(?:for\s+\d+\s*(?:days?|weeks?|months?)|if\s+|in\s+case|whenever|when\s+|as\s+needed|avoid\s+|consult\s+|contact\s+)\b/i)[0];
-
-        // Step C: Extract candidate numbers and units from coreMedSection
-        const unitRegex = /(\d+(?:\.\d+)?)\s*(mg|g|mcg|ml|l|iu|drops|puffs?|units?|%|tabs?|caps?|tablets?|capsules?|spoonfuls?|spoons?|sachets?|vials?)\b/gi;
-        const candidateMatches = [...coreMedSection.matchAll(unitRegex)];
-
-        const candidates = candidateMatches.map(m => ({
-            num: m[1],
-            unit: m[2].toLowerCase().replace(/^tablets?$/, 'tab').replace(/^capsules?$/, 'cap'),
-            raw: m[0],
-            index: m.index
-        }));
-
-        // Also check for standalone numbers not captured above (excluding schedule habits like 101, 111, 100)
-        const allNums = [...coreMedSection.matchAll(/\b(\d+(?:\.\d+)?)\b/g)];
-        for (const nm of allNums) {
-            const numVal = nm[1];
-            const idx = nm.index;
-            const captured = candidates.some(c => idx >= c.index && idx < (c.index + c.raw.length));
-            const followingText = coreMedSection.substring(idx + numVal.length, idx + numVal.length + 15);
-            const isDuration = /^\s*(?:days?|weeks?|months?)\b/i.test(followingText);
-            if (!captured && !isDuration && !/^(?:101|111|100|010|001|110|011|1111)$/.test(numVal)) {
-                candidates.push({
-                    num: numVal,
-                    unit: '',
-                    raw: numVal,
-                    index: idx
-                });
-            }
-        }
-
-        candidates.sort((a, b) => a.index - b.index);
-
-        let dose = '';
-        let doseUnit = '';
-
-        if (candidates.length >= 2) {
-            // Rule 1: medicine + (integer + units) + (integer + units)
-            // Second or final integer + units is dose and dose units
-            const finalCand = candidates[candidates.length - 1];
-            dose = finalCand.num;
-            doseUnit = finalCand.unit || 'mg';
-
-            // Earlier integer binds to catalog formulation strength if in database
-            const priorCands = candidates.slice(0, candidates.length - 1);
-            for (const pc of priorCands) {
-                const matchVar = matchedVariants.find(v => getNumbersFromDrug(v.drug_name).includes(pc.num));
-                if (matchVar) {
-                    primaryDrug = matchVar;
-                    break;
-                }
-            }
-        } else if (candidates.length === 1) {
-            // Rule 2: medicine + (integer + units)
-            // Integer is dose ONLY when the database of medicines/drugs do not have those integer + units with their names,
-            // else no dose just medicine with name and integer + units within the name.
-            const cand = candidates[0];
-            const matchingVariant = matchedVariants.find(v => getNumbersFromDrug(v.drug_name).includes(cand.num));
-
-            if (matchingVariant) {
-                primaryDrug = matchingVariant;
-                dose = '';
-                doseUnit = '';
-            } else {
-                dose = cand.num;
-                doseUnit = cand.unit || 'mg';
-            }
-        } else {
-            // Rule 3: No integers spoken at all -> No dose given!
-            dose = '';
-            doseUnit = '';
-        }
-
-        if (!dose) {
-            doseUnit = '';
-        }
-
-        // Stage 3: Extract duration
-        const daysMatch = seg.match(/\b(?:for\s*)?(\d+)\s*(days?|weeks?|months?)\b/i);
-        const forNumMatch = !daysMatch && seg.match(/\bfor\s+(\d+)\b(?!\s*(?:mg|g|mcg|ml|l|iu|%))/i);
-        let days = '';
-        if (daysMatch) {
-            days = `${daysMatch[1]} ${daysMatch[2]}`;
-        } else if (forNumMatch) {
-            days = `${forNumMatch[1]} days`;
-        } else if (/\bone\s*week\b/i.test(seg)) {
-            days = '7 days';
-        } else if (/\btwo\s*weeks\b/i.test(seg)) {
-            days = '14 days';
-        } else if (/\bone\s*month\b/i.test(seg)) {
-            days = '30 days';
-        }
-
-        // Stage 4: Schedule Speaking Habit Normalization
-        const schedule = parseSchedule(seg);
-
-        // Stage 5: Generalized Instructions
-        const parsedInst = parseInstructions(seg);
-        const instruction = parsedInst !== 'NONE' ? parsedInst : '';
-
-        // Stage 6: Relational Route Mapping Join
-        const drugId = primaryDrug.drug_id;
-        const drugType = primaryDrug.drug_type;
-        const drugName = primaryDrug.drug_name;
-        const routes = getRoutesForDrug(drugId, drugType);
-
-        results.push({
-            drug_id: drugId,
-            Drug_name: drugName,
-            dose: dose,
-            dose_unit: doseUnit,
-            schedule: schedule,
-            route: routes[0] || 'ORAL',
-            available_routes: routes,
-            available_drugs: matchedVariants,
-            did_you_mean: didYouMean,
-            instruction: instruction,
-            days: days
-        });
-    }
-
-    // Deduplicate medications: only drop truly identical duplicate repeats (same drug AND same dose AND same duration AND same schedule)
-    const deduped = [];
-    for (const r of results) {
-        const base = cleanDrugBaseName(r.Drug_name);
-        const existingIdx = deduped.findIndex(d =>
-            cleanDrugBaseName(d.Drug_name) === base &&
-            d.dose === r.dose &&
-            d.dose_unit === r.dose_unit &&
-            d.days === r.days &&
-            d.schedule === r.schedule
-        );
-        if (existingIdx === -1) {
-            deduped.push(r);
-        } else {
-            const existing = deduped[existingIdx];
-            if (!existing.instruction && r.instruction) existing.instruction = r.instruction;
-            if (existing.instruction && r.instruction && !existing.instruction.includes(r.instruction)) {
-                existing.instruction += `; ${r.instruction}`;
-            }
-        }
-    }
-
-    return deduped;
-}
 
 /**
  * Determines whether a spoken or typed prescription text fragment constitutes
- * a complete clinical sentence, or is still an in-progress incomplete fragment.
- * Prevents premature extraction while speech or typing is mid-sentence.
+ * a completed utterance boundary suitable for extraction, or is still an in-progress fragment.
+ *
+ * ARCHITECTURAL CONSTRAINT:
+ * This function performs ONLY non-interpretative speech/typing pause checks.
+ * It strictly does NOT parse medicine names, dosages, or clinical grammar in JavaScript.
+ * All clinical interpretation is performed canonically by the FastAPI PrescriptionPipeline.
  */
 function isPrescriptionSentenceComplete(transcriptText) {
     if (!transcriptText || !transcriptText.trim()) return false;
     const clean = transcriptText.trim();
 
-    // 1. Explicit sentence termination punctuation (period, newline, etc.)
+    // 1. Explicit sentence termination punctuation indicates completion
     if (/[.!?\n]$/.test(clean)) return true;
 
     // 2. Dangling trailing function words indicate utterance is actively mid-sentence
@@ -1016,50 +139,23 @@ function isPrescriptionSentenceComplete(transcriptText) {
         return false;
     }
 
-    // 3. Trailing naked number without unit indicates unfinished dosage or duration (e.g. "take Paracetamol 500mg 20", "Aten 50mg for 5")
+    // 3. Trailing bare number without unit indicates unfinished dosage or duration (e.g. "take Paracetamol 500")
     if (/\b\d+(?:\.\d+)?\s*$/.test(clean)) {
         return false;
     }
 
-    // 4. Incomplete Conditional Clause Check:
-    // If the utterance opens an "if / when / in case of" clause, it must contain both
-    // the condition antecedent AND a subsequent action directive or verb phrase
-    const condMatch = clean.match(/\b(?:if|in\s+case\s+(?:of\s+)?|whenever|when)\s+([^,;\n\.]+)$/i);
-    if (condMatch) {
-        const condPhrase = condMatch[1].trim();
-        const condWords = condPhrase.split(/\s+/);
-        // If conditional clause has fewer than 4 words or has no action verb, it is unfinished
-        const hasActionVerb = /\b(?:consult|contact|call|visit|see|report|meet|discontinue|stop|start|take|increase|decrease|reduce|review)\b/i.test(condPhrase);
-        if (!hasActionVerb || condWords.length < 4) {
-            return false;
-        }
-    }
-
-    // 5. While actively recording speech, do NOT prematurely extract if interim speech is ongoing
+    // 4. While actively recording speech, do NOT prematurely extract if interim speech is ongoing
     if (state.isRecording && state.speechInterimText && state.speechInterimText.trim().length > 0) {
         return false;
     }
 
-    // 6. Clinical Sentence Completion:
-    // Partition into clauses and evaluate the target order (the last clause currently being dictated)
-    const segments = segmentPrescriptionClauses(clean);
-    if (segments.length === 0) return false;
-    const targetSegment = segments[segments.length - 1];
+    // 5. If conditional clause opened ("if / in case of"), require enough context words before triggering
+    const condMatch = clean.match(/\b(?:if|in\s+case\s+(?:of\s+)?|whenever|when)\s+([^,;\n\.]+)$/i);
+    if (condMatch && condMatch[1].trim().split(/\s+/).length < 3) {
+        return false;
+    }
 
-    const hasDrug = findDrugInSegment(targetSegment) !== null;
-    if (!hasDrug) return false;
-
-    const hasDose = /\b(\d+(?:\.\d+)?)\s*(mg|g|mcg|ml|l|iu|drops?|puffs?|units?|%|tabs?|caps?|tablets?|capsules?|spoonfuls?|spoons?|sachets?|vials?)\b/i.test(targetSegment);
-    const hasSchedule = /\b(101|111|100|010|001|110|011|1111|1-0-1|1-1-1|1-0-0|0-1-0|0-0-1|1-1-0|0-1-1|once|twice|thrice|daily|od|bd|tds|hs|prn|qid|tid|bid|sos|stat|bedtime|night|morning|afternoon|evening)\b/i.test(targetSegment);
-    const hasDuration = /\b(?:for\s*)?(\d+)\s*(days?|weeks?|months?)\b/i.test(targetSegment) || /\b(?:one|two)\s*(?:weeks?|months?)\b/i.test(targetSegment);
-    const hasInstructions = /\b(?:after|before|with|without)\s+(?:meals?|breakfast|lunch|dinner|food|eating|water|milk)\b/i.test(targetSegment) ||
-                            /\b(?:if|when|in\s+case)\s+[^,;\n\.]+\s+(?:consult|contact|call|visit|see|stop|start|take)\b/i.test(targetSegment);
-
-    // Order is complete if order has:
-    // (Dose + Schedule) OR (Dose + Duration) OR (Dose + Instructions) OR (Schedule + Duration) OR Instructions
-    return (hasDose && (hasSchedule || hasDuration || hasInstructions)) ||
-           (hasSchedule && hasDuration) ||
-           hasInstructions;
+    return true;
 }
 
 /**
@@ -1184,15 +280,32 @@ async function startWebSocketStreaming() {
 
         state.audioContext = new AudioContextClass({ sampleRate: 16000 });
         const source = state.audioContext.createMediaStreamSource(stream);
+
+        // 80Hz Biquad High-Pass Filter: strips AC mains hum (50/60Hz) and desk/fan rumble
+        const highPassFilter = state.audioContext.createBiquadFilter();
+        highPassFilter.type = 'highpass';
+        highPassFilter.frequency.value = 80;
+
         const processor = state.audioContext.createScriptProcessor(4096, 1, 1);
         state.audioProcessor = processor;
 
-        let wsUrl = 'ws://127.0.0.1:8080/ws/transcribe?sample_rate=16000&stt_model=whisper_ayush';
+        const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        let wsUrl = `${wsProto}//${window.location.hostname}:8080/ws/transcribe?sample_rate=16000&stt_model=whisper_ayush`;
         try {
             const cfgRes = await fetch('/api/streaming-config');
             if (cfgRes.ok) {
                 const cfg = await cfgRes.json();
-                if (cfg.ws_url) wsUrl = `${cfg.ws_url}?sample_rate=16000&stt_model=whisper_ayush`;
+                if (cfg.ws_url) {
+                    if (cfg.ws_url.startsWith('/')) {
+                        wsUrl = `${wsProto}//${window.location.host}${cfg.ws_url}?sample_rate=16000&stt_model=whisper_ayush`;
+                    } else {
+                        let target = cfg.ws_url;
+                        if (window.location.protocol === 'https:' && target.startsWith('ws://')) {
+                            target = target.replace('ws://', 'wss://');
+                        }
+                        wsUrl = `${target}?sample_rate=16000&stt_model=whisper_ayush`;
+                    }
+                }
             }
         } catch (e) {}
 
@@ -1259,7 +372,8 @@ async function startWebSocketStreaming() {
             }
         };
 
-        source.connect(processor);
+        source.connect(highPassFilter);
+        highPassFilter.connect(processor);
         processor.connect(state.audioContext.destination);
     } catch (err) {
         console.warn('[WS-Streaming] Notice:', err.message);
@@ -1421,7 +535,7 @@ function onTranscriptUserEdit(text) {
 }
 
 /**
- * Process text against Drug_databse (hybrid: fast client + server endpoint)
+ * Process text against Canonical Prescription Pipeline
  */
 async function processPrescription(text, forceExtract = false) {
     const cleanText = text.trim();
@@ -1433,58 +547,65 @@ async function processPrescription(text, forceExtract = false) {
     }
 
     state.lastExtractedText = cleanText;
-
     const t0 = performance.now();
 
-    // 1. Instant client-side analysis (< 1ms with O(1) Soundex & candidate pruning)
-    const clientResults = analyzePrescriptionText(cleanText);
-    const clientLatency = performance.now() - t0;
-
-    // Populate table with instant client analysis results
-    state.extractedRecords = clientResults;
-    renderTable(state.extractedRecords);
-
-    const dymMatch = clientResults.find(r => r.did_you_mean);
-    if (dymMatch) {
-        showDidYouMeanBanner(dymMatch);
-    } else {
-        hideDidYouMeanBanner();
-    }
-
-    if (clientResults.length > 0) {
-        const latElem = document.getElementById('latency-telemetry-text');
-        if (latElem) {
-            latElem.textContent = `⚡ Extracted in ${clientLatency.toFixed(1)}ms (Sub-second)`;
-        }
-    }
-
-    // 2. Also query server for backend relational SQL flowsheet (< 15ms)
     try {
-        const res = await fetch('/api/match-prescription', {
+        const res = await fetch('/api/prescription/extract', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: cleanText })
+            body: JSON.stringify({ text: cleanText, mode: 'auto' })
         });
         const data = await res.json();
-        if (data.success && data.records && data.records.length > 0) {
-            state.extractedRecords = data.records;
-            renderTable(state.extractedRecords);
+        const latency = (performance.now() - t0).toFixed(1);
 
-            const serverDym = data.records.find(r => r.did_you_mean);
-            if (serverDym) {
-                showDidYouMeanBanner(serverDym);
-            } else {
-                hideDidYouMeanBanner();
+        if (data.success && (data.prescription || data.parsed_records)) {
+            let mappedRecords = [];
+            if (data.prescription && Array.isArray(data.prescription.items) && data.prescription.items.length > 0) {
+                mappedRecords = data.prescription.items.map(item => {
+                    const instParts = [item.instruction, item.additional_instruction].filter(Boolean);
+                    return {
+                        Drug_name: item.medicine_name || item.medicine || '',
+                        dose: item.dose || '',
+                        dose_unit: item.dose_unit || '',
+                        schedule: item.frequency || '',
+                        days: item.duration || '',
+                        route: (item.route || 'ORAL').toUpperCase(),
+                        instruction: instParts.join('; '),
+                        available_routes: item.available_routes && item.available_routes.length > 0
+                            ? item.available_routes
+                            : ['ORAL', 'RT', 'PEG', 'IV', 'IM', 'TOPICAL', 'INHALATION', 'OPHTHALMIC', 'NASAL'],
+                        confidence: item.confidence,
+                        status: item.status
+                    };
+                });
+            } else if (Array.isArray(data.parsed_records)) {
+                mappedRecords = data.parsed_records.map(r => {
+                    const doseMatch = (r.strength && r.strength !== 'NONE') ? r.strength.match(/^(\d+(?:\.\d+)?)\s*(.*)$/) : null;
+                    const instParts = [r.instruction, r.additional_instruction].filter(i => i && i !== 'NONE');
+                    return {
+                        Drug_name: r.Drug_name || '',
+                        dose: doseMatch ? doseMatch[1] : (r.dose || ''),
+                        dose_unit: doseMatch ? (doseMatch[2] || 'mg') : (r.dose_unit || ''),
+                        schedule: r.frequency && r.frequency !== 'NONE' ? r.frequency : '',
+                        days: r.duration && r.duration !== 'NONE' ? r.duration : '',
+                        route: (r.route && r.route !== 'NONE' ? r.route : 'ORAL').toUpperCase(),
+                        instruction: instParts.join('; '),
+                        available_routes: ['ORAL', 'RT', 'PEG', 'IV', 'IM', 'TOPICAL', 'INHALATION', 'OPHTHALMIC', 'NASAL']
+                    };
+                });
             }
+
+            state.extractedRecords = mappedRecords;
+            renderTable(state.extractedRecords);
 
             const latElem = document.getElementById('latency-telemetry-text');
             if (latElem) {
-                const totalMs = data.latency_ms !== undefined ? data.latency_ms : clientLatency.toFixed(1);
-                latElem.textContent = `⚡ SQL Flowsheet: ${totalMs}ms (< 0.02s)`;
+                const totalMs = data.execution_time_ms !== undefined ? data.execution_time_ms : (data.latency_ms !== undefined ? data.latency_ms : latency);
+                latElem.textContent = `⚡ Canonical Pipeline: ${totalMs}ms (Sub-second)`;
             }
         }
-    } catch (e) {
-        // Client results already rendered instantly, ignore server connection errors
+    } catch (err) {
+        console.error('[Extract] Error calling Canonical Pipeline API:', err);
     }
 }
 
@@ -1707,8 +828,8 @@ function onManualDrugSearch(val) {
         return;
     }
 
-    manualSearchTimer = setTimeout(() => {
-        const results = searchDrugs(val, 15);
+    manualSearchTimer = setTimeout(async () => {
+        const results = await searchDrugsApi(val, 15);
         if (results.length > 0) {
             dropdown.innerHTML = results.map(d => `
                 <div class="autocomplete-item" onclick="selectManualDrug('${d.drug_id}', '${escapeHtml(d.drug_name)}', '${d.drug_type}')">

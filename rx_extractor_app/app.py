@@ -11,22 +11,18 @@ import pandas as pd
 
 import config
 import db
-import vectorstore
-import pipeline
 import exporter
+from app.prescription.pipeline import PrescriptionPipeline, PipelineMode
+from app.stt import get_stt_manager
+from app.drugs import get_drug_repository
 
-st.set_page_config(page_title="Offline Prescription Extractor", layout="wide")
+st.set_page_config(page_title="Offline Prescription Extractor [Developer Console]", layout="wide")
 db.init_db()
 
 
-@st.cache_resource(show_spinner="Loading local LLM model (first time only)...")
-def get_chat(device: str, model_name: str):
-    return pipeline.build_chat(device, model_name)
-
-
-@st.cache_resource(show_spinner="Embedding + storing system prompt in FAISS (first time only)...")
-def get_vector_store():
-    return vectorstore.load_or_create_index()
+@st.cache_resource(show_spinner="Initializing canonical prescription pipeline...")
+def get_canonical_pipeline():
+    return PrescriptionPipeline()
 
 
 def load_process_to_session(p: dict):
@@ -52,8 +48,8 @@ def reattach_active_process():
 
 reattach_active_process()
 
-st.title("🩺 LangGraph Multi-Agent Prescription Extractor")
-st.caption("Parallel Multi-Agent Architecture (Supervisor, Medicine & Strength, Route, Duration & Frequency, Instructions, Aggregator, Validator) -- Fully Offline & Grounded.")
+st.title("🛠️ Prescription Extractor [Developer & Testing Console]")
+st.caption("Internal Developer Workbench, Offline Model Benchmark, and Database Inspector. For clinical production workflow, use the Node.js Web App on Port 5000.")
 
 # --- Sidebar: process & thread controls ------------------------------------
 with st.sidebar:
@@ -219,9 +215,8 @@ st.caption(
 )
 
 if is_current_active:
-    # Resource-cached: cheap after initial load for any selected model
-    chat = get_chat(st.session_state.device, active_model_name)
-    store = get_vector_store()
+    # Resource-cached canonical pipeline
+    pipe = get_canonical_pipeline()
 
     st.subheader("Enter an instruction")
     input_mode = st.radio("Input Mode", ["Text Input 📝", "Voice Input 🎙️"], horizontal=True, key="input_mode_selector")
@@ -271,8 +266,9 @@ if is_current_active:
                 if st.session_state.get("last_transcribed_hash") != audio_hash:
                     with st.spinner(f"Transcribing audio using {current_stt_label}..."):
                         try:
-                            import transcriber
-                            transcribed_text = transcriber.transcribe_audio(audio_bytes, model_key=current_stt_key)
+                            mgr = get_stt_manager()
+                            res = mgr.transcribe(audio_bytes, model_key=current_stt_key)
+                            transcribed_text = res.text
                             st.session_state.voice_transcript = transcribed_text
                             st.session_state.last_transcribed_hash = audio_hash
                             st.session_state.active_audio_bytes = audio_bytes
@@ -303,21 +299,28 @@ if is_current_active:
         progress_bar = st.progress(0, text="[1/5] Supervisor Agent initializing prescription graph...")
         time.sleep(0.1)
 
-        progress_bar.progress(20, text="[2/5] Retrieving system context & initializing agents...")
-        t_ret_start = time.perf_counter()
-        retrieved_prompt = vectorstore.retrieve_system_prompt(store)
-        t_ret_end = time.perf_counter()
-        retrieval_time = round(t_ret_end - t_ret_start, 4)
+        progress_bar.progress(20, text="[2/5] Initializing canonical prescription extraction...")
+        retrieval_time = 0.0
 
         progress_bar.progress(
-            45, text=f"[3/5] Dispatching parallel extractors (Medicine/Strength, Route, Duration/Frequency, Instructions)..."
+            50, text=f"[3/5] Executing clinical pipeline (Normalization, Deterministic Rules, Reconciliation)..."
         )
-        time.sleep(0.1)
+        mode = PipelineMode.FAST if "fast" in (st.session_state.get("model_name") or "").lower() else PipelineMode.STANDARD
+        t_start = time.perf_counter()
+        canonical_result = pipe.extract(query.strip(), mode=mode)
+        generation_time = round(time.perf_counter() - t_start, 3)
 
         progress_bar.progress(
             75, text=f"[4/5] Aggregating extractions & validating groundedness (anti-hallucination check)..."
         )
-        output, generation_time, agent_logs, aggregated_blocks = pipeline.run_agentic_pipeline(chat, query.strip())
+        output = pipe.formatter.format_plain_text(canonical_result)
+        aggregated_blocks = pipe.extract_legacy_blocks(query.strip(), mode=mode)
+        agent_logs = [
+            f"Canonical pipeline mode: {mode.value}",
+            f"Prescription items extracted: {len(canonical_result.items)}",
+            f"Overall extraction status: {canonical_result.overall_status.value}",
+            f"Pipeline latency: {canonical_result.metadata.execution_time_ms} ms",
+        ]
 
         progress_bar.progress(90, text="[5/5] Saving validated output to SQLite & exporting to CSV/XLSX...")
 

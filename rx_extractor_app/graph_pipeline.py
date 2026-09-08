@@ -10,7 +10,10 @@ Features:
 - Strict 6-field formatter for clinical team use.
 """
 import time
+import logging
 from typing import Tuple, Dict, Any, List
+
+logger = logging.getLogger("graph_pipeline")
 
 from graph_state import AgenticRxState
 from agents import (
@@ -111,8 +114,9 @@ def run_graph_extraction(llm: Any, input_text: str) -> Tuple[str, float, List[Di
     if compiled_graph is not None:
         try:
             final_state = compiled_graph.invoke(initial_state)
-        except Exception:
-            # If graph invocation encounters issues, execute the graph flow directly
+        except Exception as e:
+            # If graph invocation encounters issues, log warning and execute the graph flow directly
+            logger.warning(f"[graph_pipeline] LangGraph invocation error ({e}); executing fallback manual flow")
             final_state = _execute_flow_manually(llm, initial_state)
     else:
         final_state = _execute_flow_manually(llm, initial_state)

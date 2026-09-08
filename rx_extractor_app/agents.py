@@ -12,6 +12,7 @@ Each agent implementation lives in its own dedicated module in rx_extractor_app/
 - validator_agent.py
 - formatter_agent.py
 """
+from agents.punctuation_agent import punctuation_agent
 from agents.supervisor_agent import supervisor_node
 from agents.medicine_strength_agent import medicine_strength_agent
 from agents.route_agent import route_agent
@@ -23,6 +24,7 @@ from agents.formatter_agent import formatter_node
 from agents.utils import is_placeholder, safe_parse_json, segment_prescription
 
 __all__ = [
+    "punctuation_agent",
     "supervisor_node",
     "medicine_strength_agent",
     "route_agent",

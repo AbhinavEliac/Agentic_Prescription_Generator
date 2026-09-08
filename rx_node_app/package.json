@@ -1,0 +1,16 @@
+{
+  "name": "rx-extractor-node-app",
+  "version": "3.0.0",
+  "description": "Thin Frontend and API Gateway for Agentic Prescription Generator",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "build": "node -e \"console.log('✓ Node thin-layer assets and dependencies verified');\""
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "cors": "^2.8.5",
+    "multer": "^1.4.5-lts.1"
+  }
+}

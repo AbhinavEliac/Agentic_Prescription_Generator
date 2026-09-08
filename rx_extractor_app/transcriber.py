@@ -1,330 +1,40 @@
 """
-transcriber.py
---------------
-Latency-Optimized Multi-Model Speech-to-Text Transcriber Module.
+transcriber.py [DEPRECATED]
+---------------------------
+DEPRECATED: Active STT inference and model lifecycle management has migrated
+to the canonical STT subsystem in `app.stt`.
 
-Key Performance Enhancements for Whisper_Ayush & Whisper Large Turbo:
-1. Multi-Core CPU Thread Parallelization (sets torch.set_num_threads to all logical cores).
-2. Scaled Dot-Product Attention (SDPA) integration.
-3. Fast Greedy Decoding (num_beams=1, use_cache=True) for 3-4x latency reduction.
-4. Direct In-Memory Audio Buffer Processing to eliminate disk I/O latency.
-5. Cached Resource Loading with Streamlit (@st.cache_resource).
+This module is retained strictly as a backward-compatibility stub that delegates
+directly to `app.stt.get_stt_manager()`.
 """
-import os
-import io
-import sys
-import shutil
-import tempfile
-import logging
-import config
+import warnings
+warnings.warn(
+    "rx_extractor_app.transcriber is deprecated. Use app.stt.get_stt_manager() instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
-# Prevent torchvision / torchaudio DLL binary incompatibility from crashing transformers on Windows Python 3.13
-sys.modules.setdefault('torchvision', None)
-sys.modules.setdefault('torchaudio', None)
-
-# Configure CUDA 12 DLL search path for Windows CTranslate2 and PyTorch
-for _cp in [
-    r"C:\Users\ADMIN\AppData\Local\Programs\Ollama\lib\ollama\cuda_v12",
-    r"C:\Users\ADMIN\AppData\Local\Programs\Python\Python313\Lib\site-packages\torch\lib",
-]:
-    if os.path.exists(_cp):
-        if _cp not in os.environ.get("PATH", ""):
-            os.environ["PATH"] = _cp + os.path.pathsep + os.environ.get("PATH", "")
-        if hasattr(os, "add_dll_directory"):
-            try:
-                os.add_dll_directory(_cp)
-            except Exception:
-                pass
-
-logger = logging.getLogger("transcriber")
-logging.basicConfig(level=logging.INFO, format="[%(name)s] %(levelname)s: %(message)s")
-
-# Check CTranslate2 CUDA availability
-try:
-    import ctranslate2
-    _CT2_CUDA = ctranslate2.get_cuda_device_count() > 0
-    if _CT2_CUDA:
-        logger.info("[transcriber] NVIDIA GPU detected via CTranslate2 CUDA — using GPU for ASR inference")
-except Exception:
-    _CT2_CUDA = False
-
-# Streamlit is optional – only imported when running in Streamlit context
-try:
-    import streamlit as st
-    _HAS_STREAMLIT = True
-except ImportError:
-    _HAS_STREAMLIT = False
-
-# Module-level model cache used by FastAPI / non-Streamlit callers
-_stt_model_cache: dict = {}
-
-# Auto-configure threading and device
-try:
-    import torch
-    if torch.cuda.is_available():
-        _DEVICE = "cuda"
-        _GPU_NAME = torch.cuda.get_device_name(0)
-        logger.info(f"GPU detected: {_GPU_NAME} — using CUDA for all STT inference")
-    else:
-        _DEVICE = "cpu"
-        _GPU_NAME = None
-        threads = 6
-        torch.set_num_threads(threads)
-        logger.info(f"PyTorch CPU mode: set to {threads} threads (P-core affinity)")
-except Exception:
-    _DEVICE = "cpu"
-    _GPU_NAME = None
-
-# Auto-configure bundled ffmpeg binary from imageio_ffmpeg for Windows compatibility
-try:
-    import imageio_ffmpeg
-    ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
-    ffmpeg_dir = os.path.dirname(ffmpeg_exe)
-    target_ffmpeg = os.path.join(ffmpeg_dir, "ffmpeg.exe")
-    if not os.path.exists(target_ffmpeg):
-        try:
-            shutil.copy2(ffmpeg_exe, target_ffmpeg)
-        except Exception:
-            pass
-    if ffmpeg_dir not in os.environ.get("PATH", ""):
-        os.environ["PATH"] = ffmpeg_dir + os.path.pathsep + os.environ.get("PATH", "")
-except Exception:
-    pass
+from typing import Union, Any, Optional
+from app.stt import get_stt_manager
 
 
-def _load_stt_pipeline(model_key: str = "whisper_ayush") -> dict:
-    """Internal loader – called once per model key then cached in _stt_model_cache."""
-    logger.info(f"Loading STT model: {model_key}")
+def transcribe_audio(
+    audio: Union[bytes, str, Any],
+    model_key: str = "whisper_ayush",
+    **kwargs,
+) -> str:
     """
-    Loads, optimizes, and caches the selected Speech-to-Text model pipeline.
+    Backwards-compatible wrapper delegating to canonical STTManager.
     """
-    ayush_path = getattr(config, "AYUSH_WHISPER_PATH", "")
-
-    # 1. Ayush's Fine-Tuned Whisper Model (CTranslate2 GPU/CPU or PyTorch)
-    if model_key == "whisper_ayush":  # noqa: E501
-        # Check for local CTranslate2 INT8/FP16 model for sub-second GPU/CPU inference
-        ct2_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "Whisper_Ayush_ct2"))
-        if not os.path.exists(ct2_dir):
-            ct2_dir = os.path.abspath("Whisper_Ayush_ct2")
-        if os.path.exists(ct2_dir):
-            try:
-                from faster_whisper import WhisperModel
-                dev = "cuda" if _CT2_CUDA else "cpu"
-                comp = "float16" if _CT2_CUDA else "int8"
-                logger.info(f"[transcriber] Loading Whisper Ayush CTranslate2 model on {dev.upper()} ({comp})...")
-                ct2_model = WhisperModel(ct2_dir, device=dev, compute_type=comp, cpu_threads=6)
-                logger.info(f"[transcriber] Whisper Ayush CTranslate2 model loaded successfully on {dev.upper()}")
-                return {"engine": "ctranslate2_ayush", "model": ct2_model, "device": dev, "name": f"Whisper Ayush (CT2 Turbo {dev.upper()})"}
-            except Exception as ct2_err:
-                logger.warning(f"[transcriber] CT2 loader fallback to PyTorch: {ct2_err}")
-
-        try:
-            from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq, pipeline
-            import torch
-
-            device = "cuda:0" if torch.cuda.is_available() else "cpu"
-            torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
-
-            # Use local processor configs from Ayush's fine-tuned model directory
-            processor = AutoProcessor.from_pretrained(ayush_path if os.path.exists(ayush_path) else "openai/whisper-large-v3-turbo")
-
-            if os.path.exists(os.path.join(ayush_path, "model.safetensors")) or os.path.exists(os.path.join(ayush_path, "pytorch_model.bin")):
-                model_source = ayush_path
-            else:
-                model_source = "openai/whisper-large-v3-turbo"
-
-            model = AutoModelForSpeechSeq2Seq.from_pretrained(
-                model_source,
-                dtype=torch_dtype,
-                attn_implementation="sdpa" if hasattr(torch.nn.functional, "scaled_dot_product_attention") else "eager",
-                low_cpu_mem_usage=True,
-            )
-            if device != "cpu":
-                model.to(device)
-            else:
-                # Optimize CPU thread allocation (P-cores only on Intel Core i7-12700H)
-                try:
-                    torch.set_num_threads(6)
-                    model = torch.quantization.quantize_dynamic(model, {torch.nn.Linear}, dtype=torch.qint8)
-                    model._is_quantized = True
-                    logger.info("[transcriber] Whisper Ayush model quantized to INT8 with 6 threads for CPU acceleration")
-                except Exception as q_err:
-                    logger.warning(f"[transcriber] Dynamic quantization notice: {q_err}")
-
-            pipe = pipeline(
-                "automatic-speech-recognition",
-                model=model,
-                tokenizer=processor.tokenizer,
-                feature_extractor=processor.feature_extractor,
-                dtype=torch_dtype,
-                device=device,
-            )
-            return {"engine": "transformers_ayush", "pipeline": pipe, "name": "Whisper Ayush (Fast Turbo)"}
-        except Exception as exc:
-            logger.warning(f"whisper_ayush load failed: {exc}")
-
-    # 2. OpenAI Whisper Large v3 Turbo
-    elif model_key == "whisper_large_turbo":
-        try:
-            from transformers import pipeline
-            import torch
-
-            device = "cuda:0" if torch.cuda.is_available() else "cpu"
-            torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
-            pipe = pipeline(
-                "automatic-speech-recognition",
-                model="openai/whisper-large-v3-turbo",
-                dtype=torch_dtype,
-                device=device,
-                model_kwargs={"attn_implementation": "sdpa", "low_cpu_mem_usage": True},
-            )
-            return {"engine": "transformers_pipeline", "pipeline": pipe, "name": "Whisper Large v3 Turbo"}
-        except Exception as exc:
-            logger.warning(f"whisper_large_turbo load failed: {exc}")
-
-    # 3. Useful Sensors Moonshine Base & Tiny (Edge Optimized)
-    elif model_key in ("moonshine_base", "moonshine_tiny"):
-        hf_model_id = "usefulsensors/moonshine-base" if model_key == "moonshine_base" else "usefulsensors/moonshine-tiny"
-        try:
-            from transformers import pipeline
-            import torch
-
-            device = "cuda:0" if torch.cuda.is_available() else "cpu"
-            torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
-            pipe = pipeline("automatic-speech-recognition", model=hf_model_id, trust_remote_code=True, dtype=torch_dtype, device=device)
-            return {"engine": "transformers_pipeline", "pipeline": pipe, "name": f"Moonshine ({model_key})"}
-        except Exception:
-            pass
-
-    # 4. NVIDIA Parakeet TDT 1.1B & Canary 1B
-    elif model_key in ("parakeet_tdt", "canary_1b"):
-        hf_model_id = "nvidia/parakeet-tdt-1.1b" if model_key == "parakeet_tdt" else "nvidia/canary-1b"
-        try:
-            from transformers import pipeline
-            import torch
-
-            device = "cuda:0" if torch.cuda.is_available() else "cpu"
-            torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
-            pipe = pipeline("automatic-speech-recognition", model=hf_model_id, trust_remote_code=True, dtype=torch_dtype, device=device)
-            return {"engine": "transformers_pipeline", "pipeline": pipe, "name": f"NVIDIA ({model_key})"}
-        except Exception:
-            pass
-
-    # 5. Local OpenAI Whisper (Base / Tiny) Fast Offline Fallback
-    # 5. Local OpenAI Whisper (Base / Tiny) Fast Offline Fallback
-    whisper_size = "tiny" if "tiny" in model_key else "base"
-    try:
-        import whisper
-        logger.info(f"Falling back to local openai-whisper ({whisper_size})")
-        whisper_model = whisper.load_model(whisper_size)
-        return {"engine": "whisper_standard", "model": whisper_model, "name": f"OpenAI Whisper ({whisper_size})"}
-    except Exception as e:
-        logger.error(f"All STT model loads failed: {e}")
-        return {"engine": "error", "error": str(e), "name": "Error"}
+    mgr = get_stt_manager()
+    res = mgr.transcribe(audio, model_key=model_key, **kwargs)
+    return res.text
 
 
-def get_stt_pipeline(model_key: str = "whisper_ayush") -> dict:
+def get_stt_pipeline(model_key: str = "whisper_ayush"):
     """
-    Loads, optimizes, and caches the selected Speech-to-Text model pipeline.
-    Works in both Streamlit and FastAPI / plain-Python contexts.
+    Backwards-compatible loader delegating to canonical STTManager engine.
     """
-    # Fast path: already loaded
-    if model_key in _stt_model_cache:
-        return _stt_model_cache[model_key]
-
-    # Streamlit context: use its cache decorator for cross-session reuse
-    if _HAS_STREAMLIT:
-        try:
-            @st.cache_resource(show_spinner=f"Loading {model_key}...")
-            def _st_cached(key=model_key):
-                return _load_stt_pipeline(key)
-            result = _st_cached()
-            _stt_model_cache[model_key] = result
-            return result
-        except Exception:
-            pass  # Fall through to plain load
-
-    # FastAPI / non-Streamlit: plain Python dict cache
-    result = _load_stt_pipeline(model_key)
-    _stt_model_cache[model_key] = result
-    logger.info(f"STT model cached: {result.get('name')} engine={result.get('engine')}")
-    return result
-
-
-def transcribe_audio(audio_data, model_key: str = None) -> str:
-    """
-    Transcribes audio bytes or file buffer to text string with optimized low latency.
-    """
-    if audio_data is None:
-        return ""
-
-    target_key = model_key or getattr(config, "WHISPER_MODEL", "whisper_ayush")
-    stt_engine = get_stt_pipeline(target_key)
-
-    suffix = ".wav"
-    if hasattr(audio_data, "name") and audio_data.name:
-        ext = os.path.splitext(audio_data.name)[1]
-        if ext:
-            suffix = ext
-    elif hasattr(audio_data, "type") and audio_data.type:
-        if "mp3" in audio_data.type:
-            suffix = ".mp3"
-        elif "ogg" in audio_data.type:
-            suffix = ".ogg"
-        elif "m4a" in audio_data.type:
-            suffix = ".m4a"
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_file:
-        if isinstance(audio_data, bytes):
-            tmp_file.write(audio_data)
-        elif hasattr(audio_data, "read"):
-            tmp_file.write(audio_data.read())
-            if hasattr(audio_data, "seek"):
-                audio_data.seek(0)
-        else:
-            tmp_file.write(bytes(audio_data))
-        tmp_path = tmp_file.name
-
-    try:
-        engine_type = stt_engine.get("engine", "")
-        if "transformers" in engine_type:
-            pipe = stt_engine["pipeline"]
-            # Apply dynamic INT8 quantization on CPU for fast execution if not already quantized
-            if not getattr(pipe.model, "_is_quantized", False) and _DEVICE == "cpu":
-                try:
-                    import torch
-                    pipe.model = torch.quantization.quantize_dynamic(pipe.model, {torch.nn.Linear}, dtype=torch.qint8)
-                    pipe.model._is_quantized = True
-                except Exception:
-                    pass
-
-            gen_kwargs = {
-                "language": "english",
-                "task": "transcribe",
-                "num_beams": 1,
-                "use_cache": True,
-                "max_new_tokens": 128,
-            }
-            try:
-                import torch
-                with torch.inference_mode():
-                    result = pipe(tmp_path, generate_kwargs=gen_kwargs)
-            except Exception:
-                result = pipe(tmp_path)
-            return result.get("text", "").strip()
-        elif engine_type == "ctranslate2_ayush":
-            model = stt_engine["model"]
-            segments, _ = model.transcribe(tmp_path, beam_size=1, language="en", task="transcribe", vad_filter=True)
-            return " ".join([s.text for s in segments]).strip()
-        elif engine_type == "whisper_standard":
-            model = stt_engine["model"]
-            result = model.transcribe(tmp_path, fp16=False, beam_size=1, best_of=1)
-            return result.get("text", "").strip()
-        else:
-            raise RuntimeError(stt_engine.get("error", "Failed to initialize STT model engine."))
-    finally:
-        if os.path.exists(tmp_path):
-            try:
-                os.remove(tmp_path)
-            except Exception:
-                pass
+    mgr = get_stt_manager()
+    engine = mgr.get_engine(model_key)
+    return {"engine": engine, "model_key": model_key}

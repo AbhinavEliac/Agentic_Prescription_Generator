@@ -13,6 +13,9 @@ from agents.utils import (
     segment_prescription,
 )
 import prompt
+import logging
+
+logger = logging.getLogger("duration_frequency_agent")
 
 GENERAL_FREQUENCY_PATTERNS = [
     r"up\s+to\s+\w+\s+times\s+daily(?:\s+as\s+needed)?",
@@ -74,8 +77,8 @@ def duration_frequency_agent(state: AgenticRxState, llm: Any = None) -> Dict[str
                                 "frequency": freq,
                                 "duration": dur,
                             })
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"[duration_frequency_agent] LLM invocation error ({e}), falling back to deterministic extraction")
 
     if not extracted_dur_freq:
         segments = segment_prescription(input_text)

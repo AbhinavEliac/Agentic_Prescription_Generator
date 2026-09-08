@@ -6,6 +6,15 @@ Enables parallel Node.js, Web, and mobile applications to interface with the Lan
 """
 import os
 import sys
+_APP_DIR = os.path.abspath(os.path.dirname(__file__))
+_PROJECT_ROOT = os.path.abspath(os.path.join(_APP_DIR, ".."))
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+if _APP_DIR not in sys.path:
+    sys.path.append(_APP_DIR)
+if 'app' in sys.modules and not hasattr(sys.modules['app'], '__path__'):
+    del sys.modules['app']
+
 # Prevent torchvision / torchaudio DLL binary incompatibility from crashing transformers on Windows Python 3.13
 sys.modules.setdefault('torchvision', None)
 sys.modules.setdefault('torchaudio', None)
@@ -13,27 +22,52 @@ sys.modules.setdefault('torchaudio', None)
 import re
 import io
 import time
+import uuid
 import asyncio
 import datetime
 import threading
+import logging
 from contextlib import asynccontextmanager
 from typing import Optional, List, Dict, Any
+
+logger = logging.getLogger("api_server")
+
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import json
 
 import config
 import db
-import vectorstore
-import pipeline
 import exporter
-import transcriber
-from graph_pipeline import run_graph_extraction
 from exporter import parse_output_fields
-from fast_streaming_transcriber import FastLiveTranscriber
+from app.stt import get_stt_manager
+from app.stt.streaming import StreamingTranscriber
+from app.prescription.pipeline import PrescriptionPipeline, PipelineMode
+from app.prescription.validator import ClinicalValidator
+from app.drugs import get_drug_repository
+from app.api.schemas import (
+    PrescriptionExtractionRequest,
+    PrescriptionExtractionResponse,
+    PrescriptionValidationRequest,
+    PrescriptionValidationResponse,
+    AudioTranscriptionResponse,
+    DrugSearchResponse,
+    DrugEntryResponse,
+    ApiErrorResponse,
+    ErrorDetail,
+    ExtractionMode,
+)
 
-# Initialize database
+# Global server initialization metrics
+_SERVER_START_TIME = time.time()
+
+# Initialize canonical pipeline, drug repository, and database
+canonical_pipeline = PrescriptionPipeline()
+drug_repo = get_drug_repository()
 db.init_db()
 
 
@@ -44,12 +78,13 @@ async def lifespan(app_instance):
     def _prewarm():
         try:
             import numpy as np
-            from fast_streaming_transcriber import _get_ayush_model, _transcribe_ayush_pcm
-            m = _get_ayush_model()
-            # Run 0.1s warm-up pass on GPU
+            from app.stt import get_stt_manager
+            mgr = get_stt_manager()
+            engine = mgr.get_engine("whisper_ayush")
+            # Run 0.1s warm-up pass
             dummy = np.zeros(1600, dtype=np.float32)
-            _transcribe_ayush_pcm(dummy)
-            print("[Startup] Whisper Ayush GPU pre-warmed and ready.")
+            engine.transcribe(dummy)
+            print("[Startup] Whisper Ayush canonical engine pre-warmed and ready.")
         except Exception as e:
             print(f"[Startup] Whisper Ayush pre-warming notice: {e}")
     threading.Thread(target=_prewarm, daemon=True).start()
@@ -59,72 +94,129 @@ async def lifespan(app_instance):
 
 app = FastAPI(
     title="Agentic Prescription Extractor API",
-    description="REST API bridging LangGraph Multi-Agent Architecture and Multi-Engine STT to parallel Node.js applications.",
-    version="2.0.0",
+    description="Canonical REST API bridging Clinical Extraction Pipeline and Multi-Engine STT to Node.js and Web clients.",
+    version="3.0.0",
     lifespan=lifespan,
 )
 
-# Enable CORS for local Node.js app (Port 3000 / 5173 / any origin)
+# Configure CORS securely from environment or safe local developer origins
+_raw_origins = os.environ.get(
+    "ALLOWED_ORIGINS",
+    "http://localhost:3000,http://localhost:5000,http://localhost:8080,http://127.0.0.1:3000,http://127.0.0.1:5000,http://127.0.0.1:8080"
+)
+_allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+_allow_credentials = False if "*" in _allowed_origins else True
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_allowed_origins,
+    allow_credentials=_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Global in-memory cache for LLM and Vector Store
-_CACHED_MODELS: Dict[str, Any] = {}
-_CACHED_STORE = None
-_DRUG_NAMES_SET = None
 
 
-def get_drug_names_set():
-    global _DRUG_NAMES_SET
-    if _DRUG_NAMES_SET is None:
-        _DRUG_NAMES_SET = set()
-        db_path = os.path.join(os.path.dirname(__file__), "..", "Drug_databse", "drugList.json")
-        if os.path.exists(db_path):
-            try:
-                import re
-                with open(db_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    for item in data.get("drugData", []):
-                        name = item.get("drug_name", "").upper()
-                        name = re.sub(r"\b(TAB|TABS|TABLET|TABLETS|CAP|CAPS|CAPSULE|CAPSULES|SYP|SYRUP|INJ|INJECTION|DROPS)\b", "", name)
-                        name = re.sub(r"\b\d+(\.\d+)?\s*(MG|G|MCG|ML|L|IU|%)\b", "", name)
-                        clean = re.sub(r"[^\w\s]", "", name).strip()
-                        for w in clean.split():
-                            if len(w) >= 3:
-                                _DRUG_NAMES_SET.add(w.upper())
-            except Exception as e:
-                print(f"[Backend] Error loading drugList: {e}")
-    return _DRUG_NAMES_SET
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    """Assigns and propagates a unique X-Request-ID across all incoming requests and responses."""
+    req_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+    request.state.request_id = req_id
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = req_id
+    return response
 
 
-def get_cached_chat(device: str = "cpu", model_name: str = None):
-    global _CACHED_MODELS
-    target_model = model_name or config.MODEL_NAME
-    key = f"{device}_{target_model}"
-    if key not in _CACHED_MODELS:
-        _CACHED_MODELS[key] = pipeline.build_chat(device, target_model)
-    return _CACHED_MODELS[key]
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Standardized HTTP error envelope."""
+    req_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+    err = ApiErrorResponse.create(
+        error_code=f"HTTP_{exc.status_code}",
+        message=str(exc.detail),
+        request_id=req_id,
+    )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=err.model_dump(mode="json"),
+        headers={"X-Request-ID": req_id}
+    )
 
 
-def get_cached_vector_store():
-    global _CACHED_STORE
-    if _CACHED_STORE is None:
-        _CACHED_STORE = vectorstore.load_or_create_index()
-    return _CACHED_STORE
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Standardized 422 schema validation error envelope."""
+    req_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+    details = []
+    for error in exc.errors():
+        loc = ".".join(str(x) for x in error.get("loc", []))
+        details.append(ErrorDetail(
+            field=loc,
+            code=error.get("type", "value_error"),
+            message=error.get("msg", "Validation error"),
+        ))
+    err = ApiErrorResponse.create(
+        error_code="VALIDATION_ERROR",
+        message="Request payload failed clinical schema validation.",
+        details=details,
+        request_id=req_id,
+    )
+    return JSONResponse(
+        status_code=422,
+        content=err.model_dump(mode="json"),
+        headers={"X-Request-ID": req_id}
+    )
 
 
-class ExtractRequest(BaseModel):
-    text: str
-    process_id: Optional[int] = None
-    llm_model: Optional[str] = None
-    device: Optional[str] = "cpu"
-    process_name: Optional[str] = "node_run"
-    fast_mode: Optional[bool] = False
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    """Standardized 500 internal server error envelope."""
+    req_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+    err = ApiErrorResponse.create(
+        error_code="INTERNAL_SERVER_ERROR",
+        message=f"An unexpected internal error occurred: {str(exc)}",
+        request_id=req_id,
+    )
+    return JSONResponse(
+        status_code=500,
+        content=err.model_dump(mode="json"),
+        headers={"X-Request-ID": req_id}
+    )
+
+
+@app.get("/api/health")
+def get_health(request: Request):
+    """Canonical health probe returning service status, hardware, models, and request ID."""
+    req_id = getattr(request.state, "request_id", str(uuid.uuid4()))
+    cuda_avail = False
+    device_name = "CPU"
+    try:
+        import torch
+        if torch.cuda.is_available():
+            cuda_avail = True
+            device_name = torch.cuda.get_device_name(0)
+    except Exception:
+        pass
+
+    return {
+        "status": "healthy",
+        "version": "3.0.0",
+        "request_id": req_id,
+        "uptime_seconds": round(time.time() - _SERVER_START_TIME, 2),
+        "environment": getattr(config, "ENVIRONMENT", "development"),
+        "cuda_available": cuda_avail,
+        "device_name": device_name,
+        "default_models": {
+            "llm": getattr(config, "MODEL_NAME", "Meta-Llama-3-8B-Instruct.Q4_0.gguf"),
+            "stt": getattr(config, "WHISPER_MODEL", "whisper_ayush"),
+        },
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
+
+
+
+
+ExtractRequest = PrescriptionExtractionRequest
 
 
 class ThreadCreateRequest(BaseModel):
@@ -163,34 +255,107 @@ def get_models():
     }
 
 
-def normalize_asr_phonetics(text: str) -> str:
-    if not text:
-        return ""
-    text = re.sub(r"(?i)\b(?:8|eight)\s+(?:and|&)\s+(?:50|fifty)\b", "Aten 50", text)
-    text = re.sub(r"(?i)\b(?:8|eight)\s+(?:and|&)\s+(?:25|twenty\s*five)\b", "Aten 25", text)
-    text = re.sub(r"(?i)\b(?:8|eight)\s+(?:and|&)\s+(?:100|one\s*hundred)\b", "Aten 100", text)
-    text = re.sub(r"(?i)\b(?:8|eight)\s*(?:ten|10)\s+(?:50|fifty)\b", "Aten 50", text)
-    text = re.sub(r"(?i)\b(?:8|eight)\s*(?:ten|10)\s+(?:25|twenty\s*five)\b", "Aten 25", text)
-    text = re.sub(r"(?i)\b(?:8|eight)\s*(?:ten|10)\b", "Aten", text)
-    text = re.sub(r"(?i)\bMetaforamine\b", "Metformin", text)
-    text = re.sub(r"(?i)\bMetaformine\b", "Metformin", text)
-    text = re.sub(r"(?i)\bMetaphormine\b", "Metformin", text)
-    text = re.sub(r"(?i)\bSophramycin\b", "Soframycin", text)
-    return text
+@app.get("/api/drugs/search")
+def search_drugs(
+    q: str = Query("", description="Drug search query"),
+    limit: int = Query(30, description="Max results"),
+    request: Request = None,
+):
+    """Fast Soundex and prefix search across the master formulary."""
+    results = drug_repo.search_drugs(q, limit=limit)
+    return {
+        "query": q,
+        "total": len(results),
+        "results": [
+            {
+                "drug_id": d.drug_id,
+                "drug_code": d.drug_code,
+                "drug_name": d.drug_name,
+                "drug_type": d.drug_type,
+                "routes": d.routes,
+                "base_name": d.base_name,
+            }
+            for d in results
+        ],
+    }
 
 
+@app.get("/api/drugs/did-you-mean")
+def drug_did_you_mean(q: str = Query("", description="Misspelled drug name query")):
+    """Phonetic fuzzy drug name recommendation using Soundex + Levenshtein distance."""
+    suggestion = drug_repo.find_did_you_mean(q)
+    return {"query": q, "suggestion": suggestion}
+
+
+@app.get("/api/drugs/{drug_id}/routes")
+def get_drug_routes(drug_id: str):
+    """Permissible anatomical routes for a given formulary drug ID."""
+    routes = drug_repo.find_route(drug_id)
+    return {"drug_id": drug_id, "routes": routes}
+
+
+@app.get("/api/drugs/by-brand")
+def get_drugs_by_brand(brand: str = Query("", description="Brand name query"), limit: int = Query(10, description="Max results")):
+    """Retrieves brand formulations matching a given brand name."""
+    entries = drug_repo.find_by_brand(brand, limit=limit)
+    return {
+        "brand": brand,
+        "total": len(entries),
+        "results": [e.to_summary_dict() for e in entries],
+    }
+
+
+@app.get("/api/drugs/by-generic")
+def get_drugs_by_generic(generic: str = Query("", description="Generic substance query"), limit: int = Query(10, description="Max results")):
+    """Retrieves generic formulations and associated brands for an active substance."""
+    entries = drug_repo.find_by_generic(generic, limit=limit)
+    return {
+        "generic": generic,
+        "total": len(entries),
+        "results": [e.to_summary_dict() for e in entries],
+    }
+
+
+@app.get("/api/drugs/strength")
+def get_drug_strength(drug: str = Query("", description="Drug name or ID"), strength: Optional[str] = Query(None, description="Optional strength to validate")):
+    """Retrieves or validates recognized formulation strengths for a drug."""
+    valid_strengths = drug_repo.find_strength(drug, strength_query=strength)
+    return {
+        "drug": drug,
+        "is_valid": len(valid_strengths) > 0 if strength else None,
+        "strengths": valid_strengths,
+    }
+
+
+@app.get("/api/reference-data")
+def get_reference_data():
+    """Returns clinical reference data for schedules, dose units, and routes."""
+    ref = drug_repo.get_reference_data()
+    return {
+        "schedules": ref.schedules,
+        "dose_units": ref.dose_units,
+        "routes": ref.routes,
+    }
+
+
+@app.post("/api/prescription/extract")
 @app.post("/api/extract")
-def extract_prescription(req: ExtractRequest):
+def extract_prescription(req: PrescriptionExtractionRequest, request: Request = None):
     """
-    Executes the LangGraph Multi-Agent extraction workflow on text prescription.
-    Returns validated structured medication blocks and logs to SQLite + CSV/XLSX.
+    Canonical endpoint executing the Prescription Extraction Pipeline.
+    Returns strongly typed canonical prescription, structured items, and telemetry.
     """
     query = req.text.strip()
     if not query:
         raise HTTPException(status_code=400, detail="Prescription text cannot be empty.")
 
     # 1. Process / Thread handling
-    proc_id = req.process_id
+    proc_id = req.session_id or req.process_id
+    if isinstance(proc_id, str):
+        try:
+            proc_id = int(proc_id)
+        except ValueError:
+            proc_id = None
     csv_path = None
     xlsx_path = None
     if not proc_id:
@@ -206,259 +371,26 @@ def extract_prescription(req: ExtractRequest):
             model_file = config.MODEL_OPTIONS.get(target_model, config.MODEL_NAME)
             proc_id = db.create_process(p_name, req.device or "cpu", csv_path, xlsx_path, model_name=model_file, model_label=target_model)
 
-    # 2. Run LangGraph Multi-Agent pipeline OR Fast Relational Flowsheet
-    target_llm_label = req.llm_model or config.DEFAULT_MODEL_LABEL
+    # 2. Resolve execution mode
+    pipeline_mode = PipelineMode.FAST if (
+        req.fast_mode or 
+        req.mode == ExtractionMode.DETERMINISTIC_ONLY or 
+        req.llm_model == "fast_relational"
+    ) else PipelineMode.STANDARD
 
-    if req.fast_mode or req.llm_model == "fast_relational":
-        t0 = time.perf_counter()
-        query = normalize_asr_phonetics(query)
-        parsed_records = []
-        raw_segments = [s.strip() for s in re.split(r"(?:[\r\n;]+|(?:\.|\?|!)(?:\s+|$)|(?:\s*,\s*|\s+)(?=(?:and\s+then|then|next\s+(?:medicine|drug)|second\s+medicine|third\s+medicine|also\s+(?:give|take|start|prescribe|add|apply)|plus)\b))+", query, flags=re.IGNORECASE) if s.strip()]
-        
-        segments = []
-        current_order = ""
-        stopwords = {
-            "take", "give", "tab", "tablet", "tabs", "tablets", "cap", "capsule", "caps", "capsules",
-            "syrup", "syp", "inj", "injection", "drops", "orally", "oral", "daily", "twice", "thrice",
-            "times", "days", "day", "weeks", "months", "for", "after", "before", "meals", "meal",
-            "food", "eating", "breakfast", "lunch", "dinner", "with", "water", "milk", "warm", "cold",
-            "regular", "hot", "fluids", "liquid", "empty", "stomach", "fasting", "bedtime", "night",
-            "sleep", "morning", "afternoon", "evening", "avoid", "spicy", "oily", "alcohol", "driving",
-            "smoking", "rest", "walk", "diet", "bland", "sugar", "sweets", "salt", "steam", "rinse",
-            "mouth", "swallow", "whole", "chew", "dissolve", "shake", "well", "complete", "course",
-            "strictly", "plenty", "gargle", "consult", "doctor", "confer", "conferred", "patient",
-            "recover", "immediately", "urgently", "okay", "alright", "last", "lasts", "more", "than",
-            "come", "visit", "blood", "the", "a", "an", "this", "that", "if", "when", "whenever",
-            "fever", "pain", "headache", "cough", "cold", "rash", "vomiting", "nausea"
-        }
-        
-        drug_db = get_drug_names_set()
-        
-        for sent in raw_segments:
-            words = [w.upper() for w in re.findall(r"[A-Za-z]{3,}", sent)]
-            has_drug = any(w in drug_db for w in words if w.lower() not in stopwords)
-            if has_drug:
-                if current_order.strip():
-                    segments.append(current_order.strip())
-                current_order = sent
-            else:
-                if current_order:
-                    current_order += ". " + sent
-                else:
-                    current_order = sent
-        if current_order.strip():
-            segments.append(current_order.strip())
+    t0 = time.perf_counter()
+    canonical_rx = canonical_pipeline.extract(query, mode=pipeline_mode)
+    t1 = time.perf_counter()
+    generation_time = round(t1 - t0, 4)
 
-        for seg in segments:
-            seg = seg.strip()
-            if not seg:
-                continue
-            core_med = re.split(r"(?i)\b(?:for\s+\d+\s*(?:days?|weeks?|months?)|if\s+|in\s+case|whenever|when\s+|as\s+needed|avoid\s+|consult\s+|contact\s+)\b", seg)[0]
-            unit_matches = [(m.group(1), m.group(2).lower(), m.start()) for m in re.finditer(r"\b(\d+(?:\.\d+)?)\s*(mg|g|mcg|ml|l|iu|drops?|puffs?|units?|%|tabs?|caps?|tablets?|capsules?|spoonfuls?|spoons?|sachets?|vials?)\b", core_med, re.IGNORECASE)]
-            captured_indices = {m[2] for m in unit_matches}
-            all_cands = [(m[0], m[1], m[2]) for m in unit_matches]
-            for nm in re.finditer(r"\b(\d+(?:\.\d+)?)\b", core_med):
-                num_val = nm.group(1)
-                idx = nm.start()
-                following = core_med[idx + len(num_val):idx + len(num_val) + 15]
-                is_dur = bool(re.match(r"^\s*(?:days?|weeks?|months?)\b", following, re.IGNORECASE))
-                if idx not in captured_indices and not is_dur and not re.match(r"^(?:101|111|100|010|001|110|011|1111)$", num_val):
-                    all_cands.append((num_val, "", idx))
-            all_cands.sort(key=lambda x: x[2])
-            all_dose_matches = [(c[0], c[1]) for c in all_cands]
-            strength = ""
-            
-            freq = ""
-            if re.search(r"\b(101|1-0-1|1\s*0\s*1)\b", seg):
-                freq = "Twice a day (1-0-1)"
-            elif re.search(r"\b(111|1-1-1|1\s*1\s*1)\b", seg):
-                freq = "Thrice a day (1-1-1)"
-            elif re.search(r"\b(100|1-0-0|1\s*0\s*0)\b", seg):
-                freq = "Once a day (1-0-0)"
-            elif re.search(r"\b(010|0-1-0)\b", seg):
-                freq = "Once a day (0-1-0)"
-            elif re.search(r"\b(001|0-0-1)\b", seg):
-                freq = "Once a day (bedtime)"
-            elif re.search(r"\b(110|1-1-0)\b", seg):
-                freq = "Twice a day (1-1-0)"
-            elif re.search(r"\b(011|0-1-1)\b", seg):
-                freq = "Twice a day (0-1-1)"
-            elif re.search(r"\b(1111|1-1-1-1)\b", seg):
-                freq = "Four times a day (1-1-1-1)"
-            elif re.search(r"\b(twice|two times|bid|b\.i\.d)\b", seg, re.IGNORECASE):
-                freq = "Twice a day (1-0-1)"
-            elif re.search(r"\b(thrice|three times|tid|t\.i\.d)\b", seg, re.IGNORECASE):
-                freq = "Thrice a day (1-1-1)"
-            elif re.search(r"\b(once\s*(?:a\s*)?day|once daily|od|o\.d)\b", seg, re.IGNORECASE):
-                freq = "Once a day (1-0-0)"
-            elif re.search(r"\b(four times|qid|q\.i\.d)\b", seg, re.IGNORECASE):
-                freq = "Four times a day (1-1-1-1)"
-            elif re.search(r"\b(sos|if needed|if required)\b", seg, re.IGNORECASE):
-                freq = "If Required (SOS)"
-            
-            dur_match = re.search(r"\b(?:for\s*)?(\d+)\s*(days?|weeks?|months?)\b", seg, re.IGNORECASE)
-            duration = f"{dur_match.group(1)} {dur_match.group(2)}" if dur_match else ""
-            
-            # Multi-instruction extraction (Primary + Secondary combined with semicolon)
-            instructions = []
-            if re.search(r"\bafter\s*breakfast\b", seg, re.IGNORECASE):
-                instructions.append("after breakfast")
-            elif re.search(r"\bafter\s*lunch\b", seg, re.IGNORECASE):
-                instructions.append("after lunch")
-            elif re.search(r"\bafter\s*dinner\b", seg, re.IGNORECASE):
-                instructions.append("after dinner")
-            elif re.search(r"\bafter\s*(?:meals?|food|eating)\b", seg, re.IGNORECASE):
-                instructions.append("after meals")
-
-            if re.search(r"\bbefore\s*breakfast\b", seg, re.IGNORECASE):
-                instructions.append("before breakfast")
-            elif re.search(r"\bbefore\s*lunch\b", seg, re.IGNORECASE):
-                instructions.append("before lunch")
-            elif re.search(r"\bbefore\s*dinner\b", seg, re.IGNORECASE):
-                instructions.append("before dinner")
-            elif re.search(r"\bbefore\s*(?:meals?|food)\b", seg, re.IGNORECASE):
-                instructions.append("before meals")
-
-            if re.search(r"\bwith\s*(?:meals?|food)\b", seg, re.IGNORECASE):
-                instructions.append("with meals")
-            if re.search(r"\b(?:on\s*(?:an?\s*)?empty\s*stomach|empty\s*stomach)\b", seg, re.IGNORECASE):
-                instructions.append("on empty stomach")
-            if re.search(r"\b(?:at\s*bedtime|before\s*sleep|at\s*night)\b", seg, re.IGNORECASE):
-                instructions.append("at bedtime")
-            if re.search(r"\bwith\s*(?:warm|hot)\s*water\b", seg, re.IGNORECASE):
-                instructions.append("with warm water")
-            elif re.search(r"\bwith\s*(?:cold|regular|clean)?\s*water\b", seg, re.IGNORECASE) and "with warm water" not in instructions:
-                instructions.append("with water")
-            if re.search(r"\bwith\s*milk\b", seg, re.IGNORECASE):
-                instructions.append("with milk")
-            if re.search(r"\brinse\s*mouth(?:\s*after\s*use)?\b", seg, re.IGNORECASE):
-                instructions.append("rinse mouth after use")
-            if re.search(r"\b(?:swallow\s*whole|do\s*not\s*chew)\b", seg, re.IGNORECASE):
-                instructions.append("swallow whole (do not chew)")
-            if re.search(r"\bavoid\s*(?:oily\s*(?:and\s*)?spicy\s*food|oily\s*food|spicy\s*food)\b", seg, re.IGNORECASE):
-                instructions.append("avoid oily and spicy food")
-            if re.search(r"\bavoid\s*alcohol\b", seg, re.IGNORECASE):
-                instructions.append("avoid alcohol")
-            if re.search(r"\b(?:drink\s*plenty\s*of\s*water|plenty\s*of\s*fluids)\b", seg, re.IGNORECASE):
-                instructions.append("drink plenty of fluids")
-            if re.search(r"\bcomplete\s*(?:the\s*)?(?:full\s*)?course\b", seg, re.IGNORECASE):
-                instructions.append("complete full course")
-
-            # Contingency & Doctor consultation
-            contingency_m = re.search(r"\bif\s+(?:the\s+)?(?:patient|fever|pain|condition|symptoms?|cough|headache|vomiting|infection|rash)?\s*(?:does\s*not|doesn't|not|fails\s*to|persists?|worsens?|increases?|lasts?)\s*(?:recover|improve|subside|go\s*away|decrease|reduce|respond|get\s*better|for\s+more\s+than\s+\d+\s*days?)?\b", seg, re.IGNORECASE)
-            consult_m = re.search(r"\b(?:consult|confer(?:red)?|confirm|contact|visit|see|call|inform|report\s*to|meet|come\s+visit)\s*(?:with\s*)?(?:the\s*)?(?:doctor|physician|hospital|clinic|emergency)(?:\s*immediately|\s*urgently|\s*sos|\s*asap)?\b", seg, re.IGNORECASE)
-
-            if contingency_m and consult_m:
-                cond_text = re.sub(r"\bthe\s+", "", contingency_m.group(0), flags=re.IGNORECASE).strip()
-                doc_text = re.sub(r"\bconfer(?:red)?\b", "consult", consult_m.group(0), flags=re.IGNORECASE)
-                doc_text = re.sub(r"\bthe\s+doctor\b", "doctor", doc_text, flags=re.IGNORECASE).strip()
-                instructions.append(f"{cond_text}, {doc_text}")
-            elif contingency_m:
-                instructions.append(f"{contingency_m.group(0).strip()}, review with doctor")
-            elif consult_m:
-                doc_text = re.sub(r"\bconfer(?:red)?\b", "consult", consult_m.group(0), flags=re.IGNORECASE)
-                doc_text = re.sub(r"\bthe\s+doctor\b", "doctor", doc_text, flags=re.IGNORECASE).strip()
-                instructions.append(doc_text)
-
-            # Tail advice fallback
-            if not instructions:
-                dur_tail_m = re.search(r"\b(?:for\s*)?\d+\s*(?:days?|weeks?|months?)\s+(.+)$", seg, re.IGNORECASE)
-                if dur_tail_m:
-                    tail = re.sub(r"\b(?:okay|ok|alright|fine|thank\s*you|thanks|please|next|done)\s*$", "", dur_tail_m.group(1), flags=re.IGNORECASE).strip()
-                    tail = re.sub(r"\bconfer(?:red)?\s*(?:with\s*)?(?:the\s*)?doctor\b", "consult doctor", tail, flags=re.IGNORECASE).strip()
-                    if len(tail) > 5:
-                        instructions.append(tail)
-
-            inst = "; ".join(dict.fromkeys(instructions)) if instructions else ""
-
-            clean_words = re.findall(r"[A-Za-z]{3,}", seg)
-            stopwords = {
-                "take", "give", "tab", "tablet", "tabs", "tablets", "cap", "capsule", "caps", "capsules",
-                "syrup", "syp", "inj", "injection", "drops", "orally", "oral", "daily", "twice", "thrice",
-                "times", "days", "day", "weeks", "months", "for", "after", "before", "meals", "meal",
-                "food", "eating", "breakfast", "lunch", "dinner", "with", "water", "milk", "warm", "cold",
-                "regular", "hot", "fluids", "liquid", "empty", "stomach", "fasting", "bedtime", "night",
-                "sleep", "morning", "afternoon", "evening", "avoid", "spicy", "oily", "alcohol", "driving",
-                "smoking", "rest", "walk", "diet", "bland", "sugar", "sweets", "salt", "steam", "rinse",
-                "mouth", "swallow", "whole", "chew", "dissolve", "shake", "well", "complete", "course",
-                "strictly", "plenty", "gargle", "consult", "doctor", "confer", "conferred", "patient",
-                "recover", "immediately", "urgently", "okay", "alright", "last", "lasts", "more", "than",
-                "come", "visit", "blood"
-            }
-            drug_cands = [w for w in clean_words if w.lower() not in stopwords and (not drug_db or w.upper() in drug_db)]
-
-            if not drug_cands and parsed_records:
-                if inst:
-                    existing = parsed_records[-1]["instruction"]
-                    if not existing or existing == "NONE":
-                        parsed_records[-1]["instruction"] = inst
-                    else:
-                        combined = list(dict.fromkeys(existing.split("; ") + instructions))
-                        parsed_records[-1]["instruction"] = "; ".join(combined)
-                continue
-
-            if not drug_cands:
-                continue
-
-            cand_name = drug_cands[0].upper()
-
-            # Clinical Dosage Rules 1 & 2
-            from agents.medicine_strength_agent import _get_drug_strengths_map
-            db_map = _get_drug_strengths_map()
-            db_strengths = set()
-            for k, v in db_map.items():
-                if cand_name in k or k in cand_name:
-                    db_strengths.update(v)
-
-            if len(all_dose_matches) >= 2:
-                # Rule 1: medicine + (int + unit) + (int + unit) == final int + unit is dose
-                final_cand = all_dose_matches[-1]
-                strength = f"{final_cand[0]} {final_cand[1]}".strip()
-                if all_dose_matches[0][0] in db_strengths:
-                    cand_name = f"{cand_name} {all_dose_matches[0][0]}"
-            elif len(all_dose_matches) == 1:
-                cand_num = all_dose_matches[0][0]
-                if cand_num in db_strengths:
-                    # Rule 2: medicine + (int + unit) == in DB -> no dose, just medicine name with integer
-                    strength = ""
-                    cand_name = f"{cand_name} {cand_num}"
-                else:
-                    strength = f"{all_dose_matches[0][0]} {all_dose_matches[0][1]}".strip()
-            else:
-                strength = ""
-
-            parsed_records.append({
-                "Drug_name": cand_name,
-                "strength": strength,
-                "frequency": freq,
-                "duration": duration,
-                "route": "ORAL",
-                "instruction": inst,
-                "additional_instruction": ""
-            })
-
-        # Deduplicate only identical records
-        deduped = []
-        for r in parsed_records:
-            existing = next((d for d in deduped if d["Drug_name"].split()[0] == r["Drug_name"].split()[0] and d["strength"] == r["strength"] and d["duration"] == r["duration"] and d["frequency"] == r["frequency"]), None)
-            if not existing:
-                deduped.append(r)
-            else:
-                if r["instruction"] and r["instruction"] not in existing["instruction"]:
-                    existing["instruction"] = f"{existing['instruction']}; {r['instruction']}".strip("; ")
-        parsed_records = deduped
-
-        t1 = time.perf_counter()
-        generation_time = round(t1 - t0, 4)
-        output = "\n\n".join([f"Drug_name: {r['Drug_name']}\nstrength: {r['strength']}\nfrequency: {r['frequency']}\nduration: {r['duration']}\nroute: {r['route']}\ninstruction: {r['instruction']}" for r in parsed_records])
-        agent_logs = [{"agent": "FastRelationalFlowsheet", "status": "completed", "time": generation_time}]
-        aggregated_blocks = parsed_records
-    else:
-        t0 = time.perf_counter()
-        output, generation_time, agent_logs, aggregated_blocks = run_graph_extraction(None, query)
-        t1 = time.perf_counter()
-        # 3. Parse output fields
-        parsed_records = parse_output_fields(output, query=query)
+    # 3. Format structured blocks and string output for backwards-compatible consumers
+    parsed_records = canonical_pipeline.extract_legacy_blocks(query, mode=pipeline_mode)
+    output = "\n\n".join([
+        f"Drug_name: {r['Drug_name']}\nstrength: {r['strength']}\nfrequency: {r['frequency']}\nduration: {r['duration']}\nroute: {r['route']}\ninstruction: {r['instruction']}"
+        + (f"\nadditional_instruction: {r['additional_instruction']}" if r.get('additional_instruction') and r['additional_instruction'] != 'NONE' else "")
+        for r in parsed_records
+    ])
+    agent_logs = [{"agent": "CanonicalPrescriptionPipeline", "mode": pipeline_mode.value, "status": "completed", "time": generation_time}]
 
     # 4. Save to DB and export files
     db.add_history(proc_id, query, output, generation_time)
@@ -475,11 +407,15 @@ def extract_prescription(req: ExtractRequest):
             query,
             output,
             generation_time=generation_time,
-            llm_model_used=target_llm_label,
+            llm_model_used=req.llm_model or config.DEFAULT_MODEL_LABEL,
         )
 
     return {
         "success": True,
+        "prescription": canonical_rx.model_dump(),
+        "execution_time_ms": round(generation_time * 1000, 2),
+        "warnings": canonical_rx.validation_warnings,
+        # Legacy compatibility fields
         "process_id": proc_id,
         "raw_query": query,
         "raw_output": output,
@@ -487,37 +423,84 @@ def extract_prescription(req: ExtractRequest):
         "generation_time": generation_time,
         "agent_logs": agent_logs,
         "total_medicines": len(parsed_records),
+        "canonical": canonical_rx.model_dump(),
     }
 
 
+@app.post("/api/prescription/validate")
+def validate_prescription(req: PrescriptionValidationRequest, request: Request = None):
+    """
+    Validates arbitrary prescription items against verbatim raw input.
+    Enforces strict clinical groundedness, anti-hallucination, and valid pharmaceutical entity checks.
+    """
+    validator = ClinicalValidator()
+    report = validator.validate_prescription_items(req.items, req.raw_text)
+    return report.model_dump(mode="json")
+
+
+ALLOWED_AUDIO_EXTENSIONS = {".wav", ".mp3", ".m4a", ".ogg", ".webm", ".flac"}
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25MB DoS protection limit
+
+
+@app.post("/api/prescription/transcribe")
 @app.post("/api/transcribe")
 async def transcribe_speech(
     file: Optional[UploadFile] = File(None),
     stt_model: Optional[str] = Form("whisper_ayush"),
+    request: Request = None,
 ):
     """
-    Transcribes uploaded audio speech note using the selected STT engine (Whisper Ayush, Canary, Parakeet, Moonshine).
+    Transcribes uploaded audio speech note using the canonical STT subsystem
+    (Whisper Ayush CT2, OpenAI Whisper, Canary, Parakeet, Moonshine, Mock).
+    Enforces 25MB upload limit and audio file format validation.
     """
     if not file:
         raise HTTPException(status_code=400, detail="No audio file uploaded.")
+
+    filename = file.filename or "audio.wav"
+    ext = os.path.splitext(filename)[1].lower()
+    content_type = (file.content_type or "").lower()
+
+    # Validate audio extension or content-type
+    if ext and ext not in ALLOWED_AUDIO_EXTENSIONS and not content_type.startswith("audio/"):
+        raise HTTPException(
+            status_code=415,
+            detail=f"Unsupported media type for '{filename}'. Allowed audio formats: {', '.join(sorted(ALLOWED_AUDIO_EXTENSIONS))}",
+        )
 
     audio_bytes = await file.read()
     if not audio_bytes:
         raise HTTPException(status_code=400, detail="Uploaded audio file is empty.")
 
+    if len(audio_bytes) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Uploaded audio ({len(audio_bytes)} bytes) exceeds maximum limit of {MAX_UPLOAD_BYTES // (1024 * 1024)}MB.",
+        )
+
     t0 = time.perf_counter()
     try:
-        transcript = transcriber.transcribe_audio(audio_bytes, model_key=stt_model)
+        mgr = get_stt_manager()
+        res = mgr.transcribe(audio_bytes, model_key=stt_model)
+        t1 = time.perf_counter()
+        return {
+            "success": True,
+            "transcript": res.text,
+            "punctuated_transcript": res.text,
+            "stt_model_used": res.model,
+            "audio_duration_seconds": res.duration_s,
+            "transcription_time_ms": res.latency_ms,
+            "device_used": res.model,
+            # Legacy compatibility fields
+            "transcription_time": round(t1 - t0, 3),
+            "latency_ms": res.latency_ms,
+            "segments": [s.model_dump() for s in res.segments],
+            "fallback": res.fallback_info.model_dump() if res.fallback_info else None,
+        }
     except Exception as ex:
-        raise HTTPException(status_code=500, detail=f"STT transcription error: {str(ex)}")
-    t1 = time.perf_counter()
+        logger.error(f"[API] STT transcription failed: {ex}")
+        raise HTTPException(status_code=500, detail=f"STT transcription failed: {str(ex)}")
 
-    return {
-        "success": True,
-        "transcript": transcript,
-        "stt_model_used": stt_model,
-        "transcription_time": round(t1 - t0, 3),
-    }
 
 
 @app.get("/api/history")
@@ -565,6 +548,7 @@ def create_thread(req: ThreadCreateRequest):
 
 
 @app.websocket("/ws/transcribe")
+@app.websocket("/ws/v1/transcribe")
 async def websocket_transcribe(websocket: WebSocket):
     """
     Bidirectional WebSocket endpoint for sub-second streaming audio transcription.
@@ -584,14 +568,25 @@ async def websocket_transcribe(websocket: WebSocket):
     def _on_partial(data):
         loop.call_soon_threadsafe(out_queue.put_nowait, data)
 
-    # Use FastLiveTranscriber with selected STT model (defaults to whisper_ayush)
-    streamer = FastLiveTranscriber(sample_rate=sample_rate, model_key=stt_model, on_partial_callback=_on_partial)
-    print(f"[WS] Client connected. Active ASR engine: {stt_model} | Sample Rate: {sample_rate}Hz")
+    # Use canonical StreamingTranscriber with selected STT model from STTManager
+    mgr = get_stt_manager()
+    try:
+        engine = mgr.get_engine(stt_model)
+    except Exception as e:
+        logger.warning(f"[WS] Failed to load engine '{stt_model}', using default: {e}")
+        engine = mgr.get_engine()
+
+    streamer = StreamingTranscriber(
+        engine=engine,
+        sample_rate=sample_rate,
+        on_partial_callback=_on_partial,
+    )
+    print(f"[WS] Client connected. Active ASR engine: {engine.name} | Sample Rate: {sample_rate}Hz")
 
     # Send connection acknowledgment
     await websocket.send_text(json.dumps({
         "type": "connected",
-        "stt_model": stt_model,
+        "stt_model": engine.name,
         "sample_rate": sample_rate,
         "status": "ready"
     }))
@@ -633,7 +628,7 @@ async def websocket_transcribe(websocket: WebSocket):
 
                 action = data.get("action", "").lower()
                 if action in ("stop", "finalize"):
-                    final_res = await asyncio.to_thread(streamer.finalize)
+                    final_res = await asyncio.to_thread(streamer.finalize_dict)
                     print(f"[WS] Finalized: '{final_res.get('punctuated_text', '')}' ({final_res.get('final_latency_ms')}ms)")
                     await out_queue.put(final_res)
                 elif action == "reset":

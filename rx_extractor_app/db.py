@@ -17,9 +17,12 @@ its history for display instead of starting over.
 import os
 import sqlite3
 import datetime
+import logging
 from contextlib import contextmanager
 
 import config
+
+logger = logging.getLogger(__name__)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS processes (
@@ -147,8 +150,8 @@ def delete_process(process_id: int):
                 if p and os.path.exists(p):
                     try:
                         os.remove(p)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning(f"[DB] Failed to delete output file '{p}': {e}")
         conn.execute("DELETE FROM history WHERE process_id = ?", (process_id,))
         conn.execute("DELETE FROM processes WHERE process_id = ?", (process_id,))
 
@@ -161,7 +164,8 @@ def delete_all_processes():
                 if p and os.path.exists(p):
                     try:
                         os.remove(p)
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning(f"[DB] Failed to delete output file '{p}': {e}")
         conn.execute("DELETE FROM history")
         conn.execute("DELETE FROM processes")
+

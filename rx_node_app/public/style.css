@@ -537,9 +537,15 @@ body {
     border-color: var(--btn-save);
 }
 
+.dmh-clinical-table thead th:first-child,
+.dmh-clinical-table tbody td:first-child {
+    min-width: 220px;
+}
+
 .drug-dropdown-select {
     font-weight: 600;
     color: #0F172A;
+    min-width: 210px;
 }
 
 .route-dropdown-select {

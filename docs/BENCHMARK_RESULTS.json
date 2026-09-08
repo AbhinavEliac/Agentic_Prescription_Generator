@@ -1,0 +1,110 @@
+{
+  "deterministic_extraction": {
+    "count": 120,
+    "mean_ms": 1.72,
+    "min_ms": 0.13,
+    "p50_ms": 1.24,
+    "p95_ms": 4.13,
+    "p99_ms": 9.09,
+    "max_ms": 9.63
+  },
+  "reconciliation": {
+    "count": 120,
+    "mean_ms": 0.01,
+    "min_ms": 0.0,
+    "p50_ms": 0.01,
+    "p95_ms": 0.02,
+    "p99_ms": 0.02,
+    "max_ms": 0.03
+  },
+  "validation": {
+    "count": 120,
+    "mean_ms": 0.1,
+    "min_ms": 0.0,
+    "p50_ms": 0.04,
+    "p95_ms": 0.41,
+    "p99_ms": 0.98,
+    "max_ms": 2.01
+  },
+  "llm_extraction": {
+    "count": 25,
+    "mean_ms": 33.9,
+    "min_ms": 5.85,
+    "p50_ms": 7.42,
+    "p95_ms": 14.15,
+    "p99_ms": 501.63,
+    "max_ms": 655.38
+  },
+  "total_pipeline_latency": {
+    "count": 120,
+    "mean_ms": 1.89,
+    "min_ms": 0.19,
+    "p50_ms": 1.38,
+    "p95_ms": 5.5,
+    "p99_ms": 9.73,
+    "max_ms": 10.21
+  },
+  "stt_mock_overhead": {
+    "count": 20,
+    "mean_ms": 11.31,
+    "min_ms": 9.71,
+    "p50_ms": 10.62,
+    "p95_ms": 13.66,
+    "p99_ms": 20.17,
+    "max_ms": 21.8
+  },
+  "stt_ctranslate2_whisper_ayush": {
+    "count": 5,
+    "mean_ms": 13.12,
+    "min_ms": 11.66,
+    "p50_ms": 12.87,
+    "p95_ms": 14.8,
+    "p99_ms": 15.13,
+    "max_ms": 15.21
+  },
+  "stt": {
+    "count": 5,
+    "mean_ms": 13.12,
+    "min_ms": 11.66,
+    "p50_ms": 12.87,
+    "p95_ms": 14.8,
+    "p99_ms": 15.13,
+    "max_ms": 15.21
+  },
+  "api_endpoint_health": {
+    "count": 30,
+    "mean_ms": 3.07,
+    "min_ms": 2.29,
+    "p50_ms": 2.68,
+    "p95_ms": 3.58,
+    "p99_ms": 10.34,
+    "max_ms": 13.06
+  },
+  "api_endpoint_drug_search": {
+    "count": 30,
+    "mean_ms": 2.72,
+    "min_ms": 2.39,
+    "p50_ms": 2.61,
+    "p95_ms": 3.28,
+    "p99_ms": 3.54,
+    "max_ms": 3.57
+  },
+  "api_endpoint_extract": {
+    "count": 30,
+    "mean_ms": 43.42,
+    "min_ms": 37.71,
+    "p50_ms": 41.26,
+    "p95_ms": 52.89,
+    "p99_ms": 73.09,
+    "max_ms": 81.07
+  },
+  "api_latency": {
+    "count": 30,
+    "mean_ms": 43.42,
+    "min_ms": 37.71,
+    "p50_ms": 41.26,
+    "p95_ms": 52.89,
+    "p99_ms": 73.09,
+    "max_ms": 81.07
+  }
+}

@@ -1,0 +1,1530 @@
+[
+  {
+    "id": "CASE_001",
+    "category": "normal_english",
+    "description": "Standard clear single-drug prescription with all fields explicit",
+    "input_text": "Take Paracetamol 650 mg tablet twice daily for 5 days after food.",
+    "expected_items": [
+      {
+        "medicine_name": "Paracetamol 650 mg",
+        "strength": "650 mg",
+        "frequency": "twice daily",
+        "duration": "5 days",
+        "route": "oral",
+        "instruction": "after food",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_002",
+    "category": "normal_english",
+    "description": "Standard complete antibiotic course",
+    "input_text": "Take Amoxicillin 500 mg capsule three times daily for 7 days after meals.",
+    "expected_items": [
+      {
+        "medicine_name": "Amoxicillin",
+        "strength": "500 mg",
+        "frequency": "three times daily",
+        "duration": "7 days",
+        "route": "oral",
+        "instruction": "after meals",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_003",
+    "category": "normal_english",
+    "description": "Chronic antihypertensive daily regimen",
+    "input_text": "Take Telmisartan 40 mg tablet once daily in the morning for 30 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Telmisartan",
+        "strength": "40 mg",
+        "frequency": "once daily",
+        "duration": "30 days",
+        "route": "oral",
+        "instruction": "morning",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_004",
+    "category": "shorthand",
+    "description": "Doctor shorthand with Tab, BD, and PC",
+    "input_text": "Tab Dolo 650 mg BD for 5 days after meals.",
+    "expected_items": [
+      {
+        "medicine_name": "Dolo 650",
+        "strength": "650 mg",
+        "frequency": "BD",
+        "duration": "5 days",
+        "route": "oral",
+        "instruction": "after meals",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_005",
+    "category": "shorthand",
+    "description": "Doctor shorthand with Cap, OD, AC",
+    "input_text": "Cap Omeprazole 20 mg OD before breakfast for 14 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Omeprazole",
+        "strength": "20 mg",
+        "frequency": "OD",
+        "duration": "14 days",
+        "route": "oral",
+        "instruction": "before breakfast",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_006",
+    "category": "dosage_shorthand",
+    "description": "Pediatric/cough syrup shorthand with ml volume",
+    "input_text": "Take Ascoril D syrup 5 ml three times daily for 5 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Ascoril D",
+        "strength": "5 ml",
+        "frequency": "three times daily",
+        "duration": "5 days",
+        "route": "oral",
+        "instruction": null,
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_007",
+    "category": "dosage_shorthand",
+    "description": "Inhaler puffs shorthand",
+    "input_text": "Inhale Foracort 200 inhaler 2 puffs twice daily for 30 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Foracort",
+        "strength": "200",
+        "frequency": "twice daily",
+        "duration": "30 days",
+        "route": "inhalation",
+        "instruction": null,
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_008",
+    "category": "numeric_schedule",
+    "description": "1-0-1 numeric timing notation",
+    "input_text": "Take Metformin 500 mg tablet 1-0-1 after meals for 30 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Metformin",
+        "strength": "500 mg",
+        "frequency": "1-0-1",
+        "duration": "30 days",
+        "route": "oral",
+        "instruction": "after meals",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_009",
+    "category": "numeric_schedule",
+    "description": "1-1-1 thrice daily numeric timing notation",
+    "input_text": "Take Paracetamol 500 mg tablet 1-1-1 for 3 days after meals.",
+    "expected_items": [
+      {
+        "medicine_name": "Paracetamol 500 mg",
+        "strength": "500 mg",
+        "frequency": "1-1-1",
+        "duration": "3 days",
+        "route": "oral",
+        "instruction": "after meals",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_010",
+    "category": "numeric_schedule",
+    "description": "1-0-0 morning-only schedule",
+    "input_text": "Take Pantop 40 mg tablet 1-0-0 before breakfast for 14 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Pantop 40 mg",
+        "strength": "40 mg",
+        "frequency": "1-0-0",
+        "duration": "14 days",
+        "route": "oral",
+        "instruction": "before breakfast",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_011",
+    "category": "numeric_schedule",
+    "description": "0-0-1 bedtime-only schedule",
+    "input_text": "Take Clonazepam 0.5 mg tablet 0-0-1 at bedtime for 10 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Clonazepam",
+        "strength": "0.5 mg",
+        "frequency": "0-0-1",
+        "duration": "10 days",
+        "route": "oral",
+        "instruction": "at bedtime",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_012",
+    "category": "numeric_schedule",
+    "description": "0-1-0 afternoon-only schedule",
+    "input_text": "Take Voglibose 0.2 mg tablet 0-1-0 before lunch for 30 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Voglibose",
+        "strength": "0.2 mg",
+        "frequency": "0-1-0",
+        "duration": "30 days",
+        "route": "oral",
+        "instruction": "before lunch",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_013",
+    "category": "clinical_abbreviations",
+    "description": "HS bedtime abbreviation",
+    "input_text": "Take Cetirizine 10 mg tablet HS for 7 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Cetirizine",
+        "strength": "10 mg",
+        "frequency": "HS",
+        "duration": "7 days",
+        "route": "oral",
+        "instruction": null,
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_014",
+    "category": "clinical_abbreviations",
+    "description": "SOS emergency/as-needed abbreviation",
+    "input_text": "Take Paracetamol 650 mg tablet SOS for fever for 3 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Paracetamol 650 mg",
+        "strength": "650 mg",
+        "frequency": "SOS",
+        "duration": "3 days",
+        "route": "oral",
+        "instruction": "for fever",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_015",
+    "category": "clinical_abbreviations",
+    "description": "PRN pro re nata abbreviation",
+    "input_text": "Take Ondansetron 4 mg tablet PRN for nausea for 5 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Ondansetron",
+        "strength": "4 mg",
+        "frequency": "PRN",
+        "duration": "5 days",
+        "route": "oral",
+        "instruction": "for nausea",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_016",
+    "category": "clinical_abbreviations",
+    "description": "OD once daily abbreviation",
+    "input_text": "Take Azithromycin 500 mg tablet OD for 3 days after meals.",
+    "expected_items": [
+      {
+        "medicine_name": "Azithromycin",
+        "strength": "500 mg",
+        "frequency": "OD",
+        "duration": "3 days",
+        "route": "oral",
+        "instruction": "after meals",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_017",
+    "category": "clinical_abbreviations",
+    "description": "BD twice daily abbreviation",
+    "input_text": "Take Augmentin 625 mg tablet BD for 5 days after food.",
+    "expected_items": [
+      {
+        "medicine_name": "Augmentin",
+        "strength": "625 mg",
+        "frequency": "BD",
+        "duration": "5 days",
+        "route": "oral",
+        "instruction": "after food",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_018",
+    "category": "clinical_abbreviations",
+    "description": "TDS thrice daily abbreviation",
+    "input_text": "Take Combiflam tablet TDS for 3 days after food.",
+    "expected_items": [
+      {
+        "medicine_name": "Combiflam",
+        "strength": null,
+        "frequency": "TDS",
+        "duration": "3 days",
+        "route": "oral",
+        "instruction": "after food",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": true,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_019",
+    "category": "clinical_abbreviations",
+    "description": "QID four times daily abbreviation",
+    "input_text": "Take Ceftum 500 mg tablet QID for 5 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Ceftum",
+        "strength": "500 mg",
+        "frequency": "QID",
+        "duration": "5 days",
+        "route": "oral",
+        "instruction": null,
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_020",
+    "category": "meal_directives",
+    "description": "Explicit before breakfast administration",
+    "input_text": "Take Pantoprazole 40 mg tablet once daily before breakfast for 14 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Pantoprazole",
+        "strength": "40 mg",
+        "frequency": "once daily",
+        "duration": "14 days",
+        "route": "oral",
+        "instruction": "before breakfast",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_021",
+    "category": "meal_directives",
+    "description": "Explicit with meals administration",
+    "input_text": "Take Metformin 850 mg tablet twice daily with meals for 30 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Metformin",
+        "strength": "850 mg",
+        "frequency": "twice daily",
+        "duration": "30 days",
+        "route": "oral",
+        "instruction": "with meals",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_022",
+    "category": "meal_directives",
+    "description": "Explicit after lunch administration",
+    "input_text": "Take Ferrous Ascorbate 100 mg tablet once daily after lunch for 60 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Ferrous Ascorbate",
+        "strength": "100 mg",
+        "frequency": "once daily",
+        "duration": "60 days",
+        "route": "oral",
+        "instruction": "after lunch",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_023",
+    "category": "multiple_medicines",
+    "description": "Standard 2-medicine prescription",
+    "input_text": "Take Paracetamol 650 mg tablet twice daily for 5 days after food, and take Pantocid 40 mg tablet once daily before breakfast for 5 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Paracetamol 650 mg",
+        "strength": "650 mg",
+        "frequency": "twice daily",
+        "duration": "5 days",
+        "route": "oral",
+        "instruction": "after food",
+        "expected_status": "VALIDATED"
+      },
+      {
+        "medicine_name": "Pantocid 40",
+        "strength": "40 mg",
+        "frequency": "once daily",
+        "duration": "5 days",
+        "route": "oral",
+        "instruction": "before breakfast",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_024",
+    "category": "multiple_medicines",
+    "description": "Respiratory 3-medicine multi-route regimen",
+    "input_text": "Take Montelukast 10 mg tablet once daily at bedtime for 14 days. Take Levocetirizine 5 mg tablet once daily in the evening for 7 days. Inhale Budecort 200 mcg rotacap twice daily for 10 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Montelukast",
+        "strength": "10 mg",
+        "frequency": "once daily",
+        "duration": "14 days",
+        "route": "oral",
+        "instruction": "bedtime",
+        "expected_status": "VALIDATED"
+      },
+      {
+        "medicine_name": "Levocetirizine",
+        "strength": "5 mg",
+        "frequency": "once daily",
+        "duration": "7 days",
+        "route": "oral",
+        "instruction": "evening",
+        "expected_status": "VALIDATED"
+      },
+      {
+        "medicine_name": "Budecort 200 mcg",
+        "strength": "200 mcg",
+        "frequency": "twice daily",
+        "duration": "10 days",
+        "route": "inhalation",
+        "instruction": null,
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_025",
+    "category": "multiple_medicines",
+    "description": "Complex 5-medicine gastroenterology regimen",
+    "input_text": "Take Ofloxacin-Ornidazole tablet twice daily after meals for 5 days. Take Racecadotril 100 mg capsule three times daily before food for 3 days. Take Ondansetron 4 mg tablet up to three times daily as needed for 3 days. Consume one vial of Enterogermina oral suspension twice daily for 5 days. Dissolve one sachet of Oral Rehydration Salts in one liter of drinking water throughout the day for 2 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Ofloxacin-Ornidazole",
+        "strength": null,
+        "frequency": "twice daily",
+        "duration": "5 days",
+        "route": "oral",
+        "instruction": "after meals",
+        "expected_status": "VALIDATED"
+      },
+      {
+        "medicine_name": "Racecadotril",
+        "strength": "100 mg",
+        "frequency": "three times daily",
+        "duration": "3 days",
+        "route": "oral",
+        "instruction": "before food",
+        "expected_status": "VALIDATED"
+      },
+      {
+        "medicine_name": "Ondansetron",
+        "strength": "4 mg",
+        "frequency": "three times daily",
+        "duration": "3 days",
+        "route": "oral",
+        "instruction": "as needed",
+        "expected_status": "VALIDATED"
+      },
+      {
+        "medicine_name": "Enterogermina",
+        "strength": null,
+        "frequency": "twice daily",
+        "duration": "5 days",
+        "route": "oral",
+        "instruction": null,
+        "expected_status": "VALIDATED"
+      },
+      {
+        "medicine_name": "Oral Rehydration Salts",
+        "strength": null,
+        "frequency": "throughout the day",
+        "duration": "2 days",
+        "route": "oral",
+        "instruction": "dissolve",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": true,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_026",
+    "category": "multiple_medicines",
+    "description": "Cardiovascular 4-medicine daily prescription",
+    "input_text": "Take Amlodipine 5 mg tablet once daily in the morning for 30 days. Take Atorvastatin 20 mg tablet once daily at bedtime for 30 days. Take Aspirin 75 mg tablet once daily after lunch for 30 days. Take Metoprolol 25 mg tablet twice daily for 30 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Amlodipine 5 mg",
+        "strength": "5 mg",
+        "frequency": "once daily",
+        "duration": "30 days",
+        "route": "oral",
+        "instruction": "morning",
+        "expected_status": "VALIDATED"
+      },
+      {
+        "medicine_name": "Atorvastatin",
+        "strength": "20 mg",
+        "frequency": "once daily",
+        "duration": "30 days",
+        "route": "oral",
+        "instruction": "bedtime",
+        "expected_status": "VALIDATED"
+      },
+      {
+        "medicine_name": "Aspirin",
+        "strength": "75 mg",
+        "frequency": "once daily",
+        "duration": "30 days",
+        "route": "oral",
+        "instruction": "after lunch",
+        "expected_status": "VALIDATED"
+      },
+      {
+        "medicine_name": "Metoprolol",
+        "strength": "25 mg",
+        "frequency": "twice daily",
+        "duration": "30 days",
+        "route": "oral",
+        "instruction": null,
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_027",
+    "category": "shared_instructions",
+    "description": "Shared dietary and hydration instructions across companion medications",
+    "input_text": "Take Ferrous Ascorbate 100 mg tablet once daily after lunch for 60 days, and take Vitamin C 500 mg tablet alongside it. Include dark green leafy vegetables in diet, avoid tea near meal times, and re-test blood count in 2 months.",
+    "expected_items": [
+      {
+        "medicine_name": "Ferrous Ascorbate",
+        "strength": "100 mg",
+        "frequency": "once daily",
+        "duration": "60 days",
+        "route": "oral",
+        "instruction": "after lunch",
+        "expected_status": "VALIDATED"
+      },
+      {
+        "medicine_name": "Vitamin C",
+        "strength": "500 mg",
+        "frequency": null,
+        "duration": null,
+        "route": "oral",
+        "instruction": "leafy vegetables",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": true,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_028",
+    "category": "shared_instructions",
+    "description": "Titration shielding and conditional emergency directive",
+    "input_text": "Take one tablet of Paracetamol 650 mg 20 mg twice daily(1-0-1) for 5 days, increase the dose by 100 mg after 7 days if fever does not subside.",
+    "expected_items": [
+      {
+        "medicine_name": "Paracetamol 650 mg",
+        "strength": "20 mg",
+        "frequency": "twice daily(1-0-1)",
+        "duration": "5 days",
+        "route": "oral",
+        "instruction": "increase the dose by 100 mg",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_029",
+    "category": "shared_instructions",
+    "description": "Plural broadcast duration applied to both prescribed drugs",
+    "input_text": "Take Amoxicillin 500 mg tablet twice daily and take Paracetamol 650 mg tablet twice daily. Take both of them for 7 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Amoxicillin",
+        "strength": "500 mg",
+        "frequency": "twice daily",
+        "duration": "7 days",
+        "route": "oral",
+        "instruction": null,
+        "expected_status": "VALIDATED"
+      },
+      {
+        "medicine_name": "Paracetamol 650 mg",
+        "strength": "650 mg",
+        "frequency": "twice daily",
+        "duration": "7 days",
+        "route": "oral",
+        "instruction": null,
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_030",
+    "category": "missing_strength_trap",
+    "description": "Safety trap: missing strength must remain strictly null",
+    "input_text": "Take Dolo tablet twice daily after meals for 3 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Dolo",
+        "strength": null,
+        "frequency": "twice daily",
+        "duration": "3 days",
+        "route": "oral",
+        "instruction": "after meals",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": true,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_031",
+    "category": "missing_strength_trap",
+    "description": "Safety trap: missing antibiotic strength must remain null (never default to 500 mg)",
+    "input_text": "Take Azithromycin tablet once daily for 3 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Azithromycin",
+        "strength": null,
+        "frequency": "once daily",
+        "duration": "3 days",
+        "route": "oral",
+        "instruction": null,
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": true,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_032",
+    "category": "missing_strength_trap",
+    "description": "Safety trap: missing antacid strength must remain null (never default to 40 mg)",
+    "input_text": "Take Pantocid capsule in the morning before food for 14 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Pantocid",
+        "strength": null,
+        "frequency": "morning",
+        "duration": "14 days",
+        "route": "oral",
+        "instruction": "before food",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": true,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_033",
+    "category": "missing_duration_trap",
+    "description": "Safety trap: missing duration on chronic medication must remain null",
+    "input_text": "Take Metformin 500 mg tablet twice daily after meals.",
+    "expected_items": [
+      {
+        "medicine_name": "Metformin",
+        "strength": "500 mg",
+        "frequency": "twice daily",
+        "duration": null,
+        "route": "oral",
+        "instruction": "after meals",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": true,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_034",
+    "category": "missing_duration_trap",
+    "description": "Safety trap: missing duration on blood pressure tablet must remain null",
+    "input_text": "Take Amlodipine 5 mg tablet once daily in the morning.",
+    "expected_items": [
+      {
+        "medicine_name": "Amlodipine 5 mg",
+        "strength": "5 mg",
+        "frequency": "once daily",
+        "duration": null,
+        "route": "oral",
+        "instruction": "morning",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": true,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_035",
+    "category": "missing_duration_trap",
+    "description": "Safety trap: missing duration on inhaler must remain null",
+    "input_text": "Inhale Budecort 200 mcg rotacap twice daily.",
+    "expected_items": [
+      {
+        "medicine_name": "Budecort 200 mcg",
+        "strength": "200 mcg",
+        "frequency": "twice daily",
+        "duration": null,
+        "route": "inhalation",
+        "instruction": null,
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": true,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_036",
+    "category": "missing_route_trap",
+    "description": "Safety trap: completely unstated route must remain null (never fabricate oral)",
+    "input_text": "Metformin 500 mg twice daily for 30 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Metformin",
+        "strength": "500 mg",
+        "frequency": "twice daily",
+        "duration": "30 days",
+        "route": null,
+        "instruction": null,
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": true,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_037",
+    "category": "missing_route_trap",
+    "description": "Safety trap: no formulation or route word present (route must be null)",
+    "input_text": "Paracetamol 650 mg twice daily for 5 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Paracetamol 650 mg",
+        "strength": "650 mg",
+        "frequency": "twice daily",
+        "duration": "5 days",
+        "route": null,
+        "instruction": null,
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": true,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_038",
+    "category": "missing_route_trap",
+    "description": "Safety trap: lipid lowering drug with unstated route must remain null",
+    "input_text": "Atorvastatin 20 mg once daily at bedtime for 30 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Atorvastatin",
+        "strength": "20 mg",
+        "frequency": "once daily",
+        "duration": "30 days",
+        "route": null,
+        "instruction": "bedtime",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": true,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_039",
+    "category": "unknown_medicine_trap",
+    "description": "Safety rule: unlisted/fake drug name must trigger NEEDS_REVIEW",
+    "input_text": "Take Xylotrifol 50 mg tablet twice daily for 5 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Xylotrifol",
+        "strength": "50 mg",
+        "frequency": "twice daily",
+        "duration": "5 days",
+        "route": "oral",
+        "instruction": null,
+        "expected_status": "NEEDS_REVIEW"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": true
+    }
+  },
+  {
+    "id": "CASE_040",
+    "category": "unknown_medicine_trap",
+    "description": "Safety rule: invented drug compound must trigger NEEDS_REVIEW",
+    "input_text": "Take Pharmaglyptin 100 mg capsule once daily for 14 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Pharmaglyptin",
+        "strength": "100 mg",
+        "frequency": "once daily",
+        "duration": "14 days",
+        "route": "oral",
+        "instruction": null,
+        "expected_status": "NEEDS_REVIEW"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": true
+    }
+  },
+  {
+    "id": "CASE_041",
+    "category": "unknown_medicine_trap",
+    "description": "Safety rule: invented topical ointment must trigger NEEDS_REVIEW",
+    "input_text": "Apply Dermasporin 2% ointment twice daily for 7 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Dermasporin",
+        "strength": "2%",
+        "frequency": "twice daily",
+        "duration": "7 days",
+        "route": "topical",
+        "instruction": null,
+        "expected_status": "NEEDS_REVIEW"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": true
+    }
+  },
+  {
+    "id": "CASE_042",
+    "category": "spelling_mistakes",
+    "description": "Phonetic typo in Paracetamol",
+    "input_text": "Take Paracitamol 650 mg tablet twice daily for 5 days after food.",
+    "expected_items": [
+      {
+        "medicine_name": "Paracetamol 650 mg",
+        "strength": "650 mg",
+        "frequency": "twice daily",
+        "duration": "5 days",
+        "route": "oral",
+        "instruction": "after food",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_043",
+    "category": "spelling_mistakes",
+    "description": "Typo in Azithromycin (Azithromicin)",
+    "input_text": "Take Azithromicin 500 mg tablet once daily for 3 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Azithromycin",
+        "strength": "500 mg",
+        "frequency": "once daily",
+        "duration": "3 days",
+        "route": "oral",
+        "instruction": null,
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_044",
+    "category": "spelling_mistakes",
+    "description": "Double letter typo in Metformin (Metforrmin)",
+    "input_text": "Take Metforrmin 500 mg tablet twice daily for 10 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Metformin",
+        "strength": "500 mg",
+        "frequency": "twice daily",
+        "duration": "10 days",
+        "route": "oral",
+        "instruction": null,
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_045",
+    "category": "phonetic_transcription_errors",
+    "description": "Spoken number words for dosage (Crocin six fifty)",
+    "input_text": "Take Crocin six fifty tablet twice daily for 3 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Crocin 650",
+        "strength": "650",
+        "frequency": "twice daily",
+        "duration": "3 days",
+        "route": "oral",
+        "instruction": null,
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_046",
+    "category": "phonetic_transcription_errors",
+    "description": "Spoken number words for Dolo (Dolo six fifty)",
+    "input_text": "Take Dolo six fifty tablet twice daily for 5 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Dolo 650",
+        "strength": "650",
+        "frequency": "twice daily",
+        "duration": "5 days",
+        "route": "oral",
+        "instruction": null,
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_047",
+    "category": "phonetic_transcription_errors",
+    "description": "ASR space split in combination antibiotic (Amoxie klav)",
+    "input_text": "Take Amoxie klav 625 tablet twice daily for 5 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Amoxyclav",
+        "strength": "625",
+        "frequency": "twice daily",
+        "duration": "5 days",
+        "route": "oral",
+        "instruction": null,
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_048",
+    "category": "hinglish_mixed",
+    "description": "Mixed Hindi-English dictation: din me do baar khane ke baad lo",
+    "input_text": "Dolo 650 tablet din me do baar khane ke baad lo 5 din tak.",
+    "expected_items": [
+      {
+        "medicine_name": "Dolo 650",
+        "strength": "650",
+        "frequency": "twice daily",
+        "duration": "5 days",
+        "route": "oral",
+        "instruction": "after meals",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_049",
+    "category": "hinglish_mixed",
+    "description": "Hinglish empty stomach directive: subah khali pet lo",
+    "input_text": "Pantocid 40 tablet subah khali pet lo 14 din tak.",
+    "expected_items": [
+      {
+        "medicine_name": "Pantocid 40",
+        "strength": "40",
+        "frequency": "daily",
+        "duration": "14 days",
+        "route": "oral",
+        "instruction": "empty stomach",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_050",
+    "category": "hinglish_mixed",
+    "description": "Hinglish fever SOS condition: jab bukhar ho tab lena zarurat padne par",
+    "input_text": "Crocin 650 tablet jab bukhar ho tab lena zarurat padne par 3 din tak.",
+    "expected_items": [
+      {
+        "medicine_name": "Crocin 650",
+        "strength": "650",
+        "frequency": "SOS",
+        "duration": "3 days",
+        "route": "oral",
+        "instruction": "for fever",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_051",
+    "category": "hinglish_mixed",
+    "description": "Hinglish with water instruction: paani ke saath lo",
+    "input_text": "Amoxyclav 625 tablet din me do baar paani ke saath 5 din tak.",
+    "expected_items": [
+      {
+        "medicine_name": "Amoxyclav",
+        "strength": "625",
+        "frequency": "twice daily",
+        "duration": "5 days",
+        "route": "oral",
+        "instruction": "with water",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_052",
+    "category": "asr_acoustic_errors",
+    "description": "ASR acoustic homophone: dollar 650 -> Dolo 650",
+    "input_text": "Take dollar 650 tablet twice daily for 3 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Dolo 650",
+        "strength": "650",
+        "frequency": "twice daily",
+        "duration": "3 days",
+        "route": "oral",
+        "instruction": null,
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_053",
+    "category": "asr_acoustic_errors",
+    "description": "ASR word split: met for men 500 -> Metformin 500 mg",
+    "input_text": "Take met for men 500 mg tablet twice daily for 14 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Metformin",
+        "strength": "500 mg",
+        "frequency": "twice daily",
+        "duration": "14 days",
+        "route": "oral",
+        "instruction": null,
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_054",
+    "category": "asr_acoustic_errors",
+    "description": "ASR spoken number words: pantop forty -> Pantop 40",
+    "input_text": "Take pantop forty tablet once daily before breakfast for 10 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Pantop 40",
+        "strength": "40",
+        "frequency": "once daily",
+        "duration": "10 days",
+        "route": "oral",
+        "instruction": "before breakfast",
+        "expected_status": "VALIDATED"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_055",
+    "category": "ambiguous_instructions",
+    "description": "Safety rule: ambiguous frequency (once or twice daily) must trigger NEEDS_REVIEW",
+    "input_text": "Take Paracetamol 650 mg tablet once or twice daily as needed for fever for 5 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Paracetamol 650 mg",
+        "strength": "650 mg",
+        "frequency": "once or twice daily",
+        "duration": "5 days",
+        "route": "oral",
+        "instruction": "for fever",
+        "expected_status": "NEEDS_REVIEW"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": true
+    }
+  },
+  {
+    "id": "CASE_056",
+    "category": "ambiguous_instructions",
+    "description": "Safety rule: ambiguous ceiling directive (not more than twice daily) triggers NEEDS_REVIEW",
+    "input_text": "Take Tramadol 50 mg tablet as needed but not more than twice daily for severe pain for 3 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Tramadol",
+        "strength": "50 mg",
+        "frequency": "not more than twice daily",
+        "duration": "3 days",
+        "route": "oral",
+        "instruction": "for severe pain",
+        "expected_status": "NEEDS_REVIEW"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": true
+    }
+  },
+  {
+    "id": "CASE_057",
+    "category": "conflicting_information",
+    "description": "Safety rule: contradictory frequencies in text must trigger NEEDS_REVIEW",
+    "input_text": "Take Amoxicillin 500 mg tablet twice daily and also take three times daily for 7 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Amoxicillin",
+        "strength": "500 mg",
+        "frequency": "twice daily",
+        "duration": "7 days",
+        "route": "oral",
+        "instruction": null,
+        "expected_status": "NEEDS_REVIEW"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": true
+    }
+  },
+  {
+    "id": "CASE_058",
+    "category": "conflicting_information",
+    "description": "Safety rule: contradictory strengths (500 mg or 250 mg) must trigger review",
+    "input_text": "Take Metformin 500 mg or 250 mg tablet twice daily for 14 days.",
+    "expected_items": [
+      {
+        "medicine_name": "Metformin",
+        "strength": "500 mg",
+        "frequency": "twice daily",
+        "duration": "14 days",
+        "route": "oral",
+        "instruction": null,
+        "expected_status": "NEEDS_REVIEW"
+      }
+    ],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": false,
+      "allow_null_duration": false,
+      "allow_null_route": false,
+      "requires_review": true
+    }
+  },
+  {
+    "id": "CASE_059",
+    "category": "non_medication_rejection",
+    "description": "Diagnostics and vitals must be filtered with 0 extracted medicines",
+    "input_text": "Good morning doctor. Check blood pressure 130/80 mmHg and endoscopy report.",
+    "expected_items": [],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": true,
+      "allow_null_duration": true,
+      "allow_null_route": true,
+      "requires_review": false
+    }
+  },
+  {
+    "id": "CASE_060",
+    "category": "non_medication_rejection",
+    "description": "Physical care and hot water fomentation must be filtered with 0 extracted medicines",
+    "input_text": "Apply hot water fomentation and ice packs to affected knee twice daily for 3 days.",
+    "expected_items": [],
+    "safety_invariants": {
+      "prohibit_hallucination": true,
+      "allow_null_strength": true,
+      "allow_null_duration": true,
+      "allow_null_route": true,
+      "requires_review": false
+    }
+  }
+]

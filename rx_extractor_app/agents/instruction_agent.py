@@ -17,6 +17,9 @@ from agents.utils import (
     segment_prescription,
 )
 import prompt
+import logging
+
+logger = logging.getLogger("instruction_agent")
 
 # Common Action verbs that introduce a new medication clause
 MED_ACTION_VERB_START = r"(?i)^(?:take\s+(?!(?:walks?|rest|care|steam))\w+|administer|give|prescribe|start|consume|dissolve|inhale|apply|put|instill|inject|infuse|gently\s+massage|massage|cleanse)\b"
@@ -219,8 +222,8 @@ def instruction_agent(state: AgenticRxState, llm: Any = None) -> Dict[str, Any]:
                                 "instruction": inst,
                                 "additional_instruction": add_inst if not is_placeholder(add_inst) else "NONE",
                             })
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"[instruction_agent] LLM invocation error ({e}), falling back to deterministic extraction")
 
     if not extracted_inst:
         segments = segment_prescription(input_text)

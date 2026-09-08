@@ -1,33 +1,56 @@
+# ==============================================================================
+# RxAgent - Multi-Agent Clinical Prescription Extractor & Fast ASR System
+# Compatible with Linux (Ubuntu/Debian/Fedora/Arch), Windows, and macOS
+# ==============================================================================
+#
+# 🐧 Ubuntu / Debian System Packages (Run before pip install):
+#    sudo apt update && sudo apt install -y python3-dev python3-venv python3-pip ffmpeg libsndfile1 nodejs npm
+#
+# 🚀 Optional for NVIDIA GPU CUDA on Linux:
+#    pip install torch --index-url https://download.pytorch.org/whl/cu121
+# ==============================================================================
+
 # --- LangChain & LangGraph Multi-Agent Architecture ------------------------
 langchain>=0.2.0
 langchain-core>=0.2.0
 langgraph>=0.2.0
 langchain-community>=0.2.0
 
-# --- FastAPI REST API Gateway & Microservices ------------------------------
+# --- FastAPI REST API Gateway & Streaming WebSockets -----------------------
 fastapi>=0.110.0
 uvicorn[standard]>=0.28.0
+websockets>=12.0
 pydantic>=2.0.0
 python-multipart>=0.0.9
 
-# --- Local Offline LLM Inference Backend (GPT4All / GGUF) ------------------
-gpt4all>=2.7.0
+# --- High-Speed ASR Speech-to-Text Engines (CTranslate2 & Whisper) ---------
+faster-whisper>=1.0.0
+ctranslate2>=4.0.0
+openai-whisper>=20231117
 
-# --- Local Vector Store & Embeddings Cache ---------------------------------
-faiss-cpu>=1.7.4
-
-# --- Multi-Engine Speech-to-Text & Deep Learning (Whisper / Canary / Moonshine)
+# --- Deep Learning & Transformers (Canary / Parakeet / Moonshine) ----------
 torch>=2.0.0
 transformers>=4.40.0
 accelerate>=0.28.0
 safetensors>=0.4.0
-openai-whisper>=20231117
-soundfile>=0.12.1
-imageio-ffmpeg>=0.4.9
-scipy>=1.10.0
 
-# --- Streamlit UI, DataFrames & Multi-Format Exporters ---------------------
+# --- Audio Processing & Digital Signal Processing (VAD) --------------------
+soundfile>=0.12.1
+scipy>=1.10.0
+numpy>=1.24.0
+imageio-ffmpeg>=0.4.9
+
+# --- Local Offline LLM & Embeddings (GPT4All / FAISS) ----------------------
+gpt4all>=2.7.0
+faiss-cpu>=1.7.4
+
+# --- DataFrames, UI & Multi-Format Exporters -------------------------------
 streamlit>=1.32.0
 pandas>=2.0.0
 openpyxl>=3.1.0
 requests>=2.31.0
+
+# --- Test, Verification & Benchmarking Harness -----------------------------
+pytest>=8.0.0
+httpx>=0.27.0
+

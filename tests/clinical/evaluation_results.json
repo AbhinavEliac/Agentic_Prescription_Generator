@@ -1,0 +1,1276 @@
+{
+  "timestamp": "2026-09-08T12:19:57Z",
+  "fast_mode": {
+    "mode": "fast",
+    "total_cases": 60,
+    "passed_cases": 60,
+    "failed_cases": 0,
+    "pass_rate": 100.0,
+    "field_metrics": {
+      "medicine": {
+        "tp": 70,
+        "fp": 0,
+        "fn": 0,
+        "total_expected": 70,
+        "precision": 1.0,
+        "recall": 1.0,
+        "accuracy": 1.0,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.0
+      },
+      "strength": {
+        "tp": 63,
+        "fp": 0,
+        "fn": 0,
+        "total_expected": 63,
+        "precision": 1.0,
+        "recall": 1.0,
+        "accuracy": 1.0,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.0
+      },
+      "frequency": {
+        "tp": 69,
+        "fp": 0,
+        "fn": 0,
+        "total_expected": 69,
+        "precision": 1.0,
+        "recall": 1.0,
+        "accuracy": 1.0,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.0
+      },
+      "duration": {
+        "tp": 66,
+        "fp": 0,
+        "fn": 0,
+        "total_expected": 66,
+        "precision": 1.0,
+        "recall": 1.0,
+        "accuracy": 1.0,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.0
+      },
+      "route": {
+        "tp": 67,
+        "fp": 0,
+        "fn": 0,
+        "total_expected": 67,
+        "precision": 1.0,
+        "recall": 1.0,
+        "accuracy": 1.0,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.0
+      },
+      "status": {
+        "tp": 70,
+        "fp": 0,
+        "fn": 0,
+        "total_expected": 70,
+        "precision": 1.0,
+        "recall": 1.0,
+        "accuracy": 1.0,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.0
+      }
+    },
+    "hallucinations": {
+      "fabricated_strength": 0,
+      "fabricated_duration": 0,
+      "fabricated_route": 0,
+      "failed_unknown_med_review": 0,
+      "failed_ambiguous_freq_review": 0
+    },
+    "category_results": {
+      "normal_english": {
+        "total": 3,
+        "passed": 3
+      },
+      "shorthand": {
+        "total": 2,
+        "passed": 2
+      },
+      "dosage_shorthand": {
+        "total": 2,
+        "passed": 2
+      },
+      "numeric_schedule": {
+        "total": 5,
+        "passed": 5
+      },
+      "clinical_abbreviations": {
+        "total": 7,
+        "passed": 7
+      },
+      "meal_directives": {
+        "total": 3,
+        "passed": 3
+      },
+      "multiple_medicines": {
+        "total": 4,
+        "passed": 4
+      },
+      "shared_instructions": {
+        "total": 3,
+        "passed": 3
+      },
+      "missing_strength_trap": {
+        "total": 3,
+        "passed": 3
+      },
+      "missing_duration_trap": {
+        "total": 3,
+        "passed": 3
+      },
+      "missing_route_trap": {
+        "total": 3,
+        "passed": 3
+      },
+      "unknown_medicine_trap": {
+        "total": 3,
+        "passed": 3
+      },
+      "spelling_mistakes": {
+        "total": 3,
+        "passed": 3
+      },
+      "phonetic_transcription_errors": {
+        "total": 3,
+        "passed": 3
+      },
+      "hinglish_mixed": {
+        "total": 4,
+        "passed": 4
+      },
+      "asr_acoustic_errors": {
+        "total": 3,
+        "passed": 3
+      },
+      "ambiguous_instructions": {
+        "total": 2,
+        "passed": 2
+      },
+      "conflicting_information": {
+        "total": 2,
+        "passed": 2
+      },
+      "non_medication_rejection": {
+        "total": 2,
+        "passed": 2
+      }
+    },
+    "avg_latency_ms": 2.59,
+    "p95_latency_ms": 9.44,
+    "case_details": [
+      {
+        "id": "CASE_001",
+        "category": "normal_english",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 20.49
+      },
+      {
+        "id": "CASE_002",
+        "category": "normal_english",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 2.38
+      },
+      {
+        "id": "CASE_003",
+        "category": "normal_english",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 2.0
+      },
+      {
+        "id": "CASE_004",
+        "category": "shorthand",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 2.61
+      },
+      {
+        "id": "CASE_005",
+        "category": "shorthand",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.6
+      },
+      {
+        "id": "CASE_006",
+        "category": "dosage_shorthand",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.5
+      },
+      {
+        "id": "CASE_007",
+        "category": "dosage_shorthand",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.47
+      },
+      {
+        "id": "CASE_008",
+        "category": "numeric_schedule",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.63
+      },
+      {
+        "id": "CASE_009",
+        "category": "numeric_schedule",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.8
+      },
+      {
+        "id": "CASE_010",
+        "category": "numeric_schedule",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.56
+      },
+      {
+        "id": "CASE_011",
+        "category": "numeric_schedule",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.53
+      },
+      {
+        "id": "CASE_012",
+        "category": "numeric_schedule",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.29
+      },
+      {
+        "id": "CASE_013",
+        "category": "clinical_abbreviations",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.61
+      },
+      {
+        "id": "CASE_014",
+        "category": "clinical_abbreviations",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.46
+      },
+      {
+        "id": "CASE_015",
+        "category": "clinical_abbreviations",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.5
+      },
+      {
+        "id": "CASE_016",
+        "category": "clinical_abbreviations",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.44
+      },
+      {
+        "id": "CASE_017",
+        "category": "clinical_abbreviations",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.55
+      },
+      {
+        "id": "CASE_018",
+        "category": "clinical_abbreviations",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 2.33
+      },
+      {
+        "id": "CASE_019",
+        "category": "clinical_abbreviations",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.23
+      },
+      {
+        "id": "CASE_020",
+        "category": "meal_directives",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.31
+      },
+      {
+        "id": "CASE_021",
+        "category": "meal_directives",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.41
+      },
+      {
+        "id": "CASE_022",
+        "category": "meal_directives",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.48
+      },
+      {
+        "id": "CASE_023",
+        "category": "multiple_medicines",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 2.83
+      },
+      {
+        "id": "CASE_024",
+        "category": "multiple_medicines",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 4.29
+      },
+      {
+        "id": "CASE_025",
+        "category": "multiple_medicines",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 9.15
+      },
+      {
+        "id": "CASE_026",
+        "category": "multiple_medicines",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 5.91
+      },
+      {
+        "id": "CASE_027",
+        "category": "shared_instructions",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 5.42
+      },
+      {
+        "id": "CASE_028",
+        "category": "shared_instructions",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 2.52
+      },
+      {
+        "id": "CASE_029",
+        "category": "shared_instructions",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 3.14
+      },
+      {
+        "id": "CASE_030",
+        "category": "missing_strength_trap",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.39
+      },
+      {
+        "id": "CASE_031",
+        "category": "missing_strength_trap",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.42
+      },
+      {
+        "id": "CASE_032",
+        "category": "missing_strength_trap",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.54
+      },
+      {
+        "id": "CASE_033",
+        "category": "missing_duration_trap",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.58
+      },
+      {
+        "id": "CASE_034",
+        "category": "missing_duration_trap",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.63
+      },
+      {
+        "id": "CASE_035",
+        "category": "missing_duration_trap",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.66
+      },
+      {
+        "id": "CASE_036",
+        "category": "missing_route_trap",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.8
+      },
+      {
+        "id": "CASE_037",
+        "category": "missing_route_trap",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.45
+      },
+      {
+        "id": "CASE_038",
+        "category": "missing_route_trap",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.37
+      },
+      {
+        "id": "CASE_039",
+        "category": "unknown_medicine_trap",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.59
+      },
+      {
+        "id": "CASE_040",
+        "category": "unknown_medicine_trap",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 9.44
+      },
+      {
+        "id": "CASE_041",
+        "category": "unknown_medicine_trap",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 4.84
+      },
+      {
+        "id": "CASE_042",
+        "category": "spelling_mistakes",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.47
+      },
+      {
+        "id": "CASE_043",
+        "category": "spelling_mistakes",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.26
+      },
+      {
+        "id": "CASE_044",
+        "category": "spelling_mistakes",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.26
+      },
+      {
+        "id": "CASE_045",
+        "category": "phonetic_transcription_errors",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.64
+      },
+      {
+        "id": "CASE_046",
+        "category": "phonetic_transcription_errors",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.3
+      },
+      {
+        "id": "CASE_047",
+        "category": "phonetic_transcription_errors",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.47
+      },
+      {
+        "id": "CASE_048",
+        "category": "hinglish_mixed",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.2
+      },
+      {
+        "id": "CASE_049",
+        "category": "hinglish_mixed",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.29
+      },
+      {
+        "id": "CASE_050",
+        "category": "hinglish_mixed",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.28
+      },
+      {
+        "id": "CASE_051",
+        "category": "hinglish_mixed",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.43
+      },
+      {
+        "id": "CASE_052",
+        "category": "asr_acoustic_errors",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.26
+      },
+      {
+        "id": "CASE_053",
+        "category": "asr_acoustic_errors",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.56
+      },
+      {
+        "id": "CASE_054",
+        "category": "asr_acoustic_errors",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.42
+      },
+      {
+        "id": "CASE_055",
+        "category": "ambiguous_instructions",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.65
+      },
+      {
+        "id": "CASE_056",
+        "category": "ambiguous_instructions",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.53
+      },
+      {
+        "id": "CASE_057",
+        "category": "conflicting_information",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.53
+      },
+      {
+        "id": "CASE_058",
+        "category": "conflicting_information",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 1.34
+      },
+      {
+        "id": "CASE_059",
+        "category": "non_medication_rejection",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 13.29
+      },
+      {
+        "id": "CASE_060",
+        "category": "non_medication_rejection",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 0.16
+      }
+    ]
+  },
+  "standard_mode": {
+    "mode": "standard",
+    "total_cases": 60,
+    "passed_cases": 51,
+    "failed_cases": 9,
+    "pass_rate": 85.0,
+    "field_metrics": {
+      "medicine": {
+        "tp": 70,
+        "fp": 0,
+        "fn": 0,
+        "total_expected": 70,
+        "precision": 1.0,
+        "recall": 1.0,
+        "accuracy": 1.0,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.0
+      },
+      "strength": {
+        "tp": 63,
+        "fp": 0,
+        "fn": 0,
+        "total_expected": 63,
+        "precision": 1.0,
+        "recall": 1.0,
+        "accuracy": 1.0,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.0
+      },
+      "frequency": {
+        "tp": 69,
+        "fp": 0,
+        "fn": 0,
+        "total_expected": 69,
+        "precision": 1.0,
+        "recall": 1.0,
+        "accuracy": 1.0,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.0
+      },
+      "duration": {
+        "tp": 66,
+        "fp": 0,
+        "fn": 0,
+        "total_expected": 66,
+        "precision": 1.0,
+        "recall": 1.0,
+        "accuracy": 1.0,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.0
+      },
+      "route": {
+        "tp": 67,
+        "fp": 0,
+        "fn": 0,
+        "total_expected": 67,
+        "precision": 1.0,
+        "recall": 1.0,
+        "accuracy": 1.0,
+        "false_positive_rate": 0.0,
+        "false_negative_rate": 0.0
+      },
+      "status": {
+        "tp": 61,
+        "fp": 9,
+        "fn": 0,
+        "total_expected": 70,
+        "precision": 0.8714,
+        "recall": 0.8714,
+        "accuracy": 0.8714,
+        "false_positive_rate": 0.1286,
+        "false_negative_rate": 0.0
+      }
+    },
+    "hallucinations": {
+      "fabricated_strength": 0,
+      "fabricated_duration": 0,
+      "fabricated_route": 0,
+      "failed_unknown_med_review": 0,
+      "failed_ambiguous_freq_review": 0
+    },
+    "category_results": {
+      "normal_english": {
+        "total": 3,
+        "passed": 3
+      },
+      "shorthand": {
+        "total": 2,
+        "passed": 2
+      },
+      "dosage_shorthand": {
+        "total": 2,
+        "passed": 1
+      },
+      "numeric_schedule": {
+        "total": 5,
+        "passed": 5
+      },
+      "clinical_abbreviations": {
+        "total": 7,
+        "passed": 7
+      },
+      "meal_directives": {
+        "total": 3,
+        "passed": 3
+      },
+      "multiple_medicines": {
+        "total": 4,
+        "passed": 4
+      },
+      "shared_instructions": {
+        "total": 3,
+        "passed": 3
+      },
+      "missing_strength_trap": {
+        "total": 3,
+        "passed": 3
+      },
+      "missing_duration_trap": {
+        "total": 3,
+        "passed": 3
+      },
+      "missing_route_trap": {
+        "total": 3,
+        "passed": 3
+      },
+      "unknown_medicine_trap": {
+        "total": 3,
+        "passed": 3
+      },
+      "spelling_mistakes": {
+        "total": 3,
+        "passed": 3
+      },
+      "phonetic_transcription_errors": {
+        "total": 3,
+        "passed": 0
+      },
+      "hinglish_mixed": {
+        "total": 4,
+        "passed": 1
+      },
+      "asr_acoustic_errors": {
+        "total": 3,
+        "passed": 2
+      },
+      "ambiguous_instructions": {
+        "total": 2,
+        "passed": 2
+      },
+      "conflicting_information": {
+        "total": 2,
+        "passed": 1
+      },
+      "non_medication_rejection": {
+        "total": 2,
+        "passed": 2
+      }
+    },
+    "avg_latency_ms": 22.53,
+    "p95_latency_ms": 20.04,
+    "case_details": [
+      {
+        "id": "CASE_001",
+        "category": "normal_english",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 698.48
+      },
+      {
+        "id": "CASE_002",
+        "category": "normal_english",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 10.97
+      },
+      {
+        "id": "CASE_003",
+        "category": "normal_english",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 9.52
+      },
+      {
+        "id": "CASE_004",
+        "category": "shorthand",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 10.56
+      },
+      {
+        "id": "CASE_005",
+        "category": "shorthand",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 9.41
+      },
+      {
+        "id": "CASE_006",
+        "category": "dosage_shorthand",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 9.05
+      },
+      {
+        "id": "CASE_007",
+        "category": "dosage_shorthand",
+        "passed": false,
+        "failures": [
+          "Status mismatch: expected 'VALIDATED', got 'CONFLICT'"
+        ],
+        "latency_ms": 9.84
+      },
+      {
+        "id": "CASE_008",
+        "category": "numeric_schedule",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 11.43
+      },
+      {
+        "id": "CASE_009",
+        "category": "numeric_schedule",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 9.26
+      },
+      {
+        "id": "CASE_010",
+        "category": "numeric_schedule",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 10.88
+      },
+      {
+        "id": "CASE_011",
+        "category": "numeric_schedule",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 9.71
+      },
+      {
+        "id": "CASE_012",
+        "category": "numeric_schedule",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 10.48
+      },
+      {
+        "id": "CASE_013",
+        "category": "clinical_abbreviations",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 9.17
+      },
+      {
+        "id": "CASE_014",
+        "category": "clinical_abbreviations",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 9.3
+      },
+      {
+        "id": "CASE_015",
+        "category": "clinical_abbreviations",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 9.69
+      },
+      {
+        "id": "CASE_016",
+        "category": "clinical_abbreviations",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 9.48
+      },
+      {
+        "id": "CASE_017",
+        "category": "clinical_abbreviations",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 9.6
+      },
+      {
+        "id": "CASE_018",
+        "category": "clinical_abbreviations",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 9.43
+      },
+      {
+        "id": "CASE_019",
+        "category": "clinical_abbreviations",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 8.86
+      },
+      {
+        "id": "CASE_020",
+        "category": "meal_directives",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 9.77
+      },
+      {
+        "id": "CASE_021",
+        "category": "meal_directives",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 9.83
+      },
+      {
+        "id": "CASE_022",
+        "category": "meal_directives",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 9.33
+      },
+      {
+        "id": "CASE_023",
+        "category": "multiple_medicines",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 13.83
+      },
+      {
+        "id": "CASE_024",
+        "category": "multiple_medicines",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 17.04
+      },
+      {
+        "id": "CASE_025",
+        "category": "multiple_medicines",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 25.65
+      },
+      {
+        "id": "CASE_026",
+        "category": "multiple_medicines",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 20.04
+      },
+      {
+        "id": "CASE_027",
+        "category": "shared_instructions",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 16.06
+      },
+      {
+        "id": "CASE_028",
+        "category": "shared_instructions",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 12.63
+      },
+      {
+        "id": "CASE_029",
+        "category": "shared_instructions",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 16.47
+      },
+      {
+        "id": "CASE_030",
+        "category": "missing_strength_trap",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 11.57
+      },
+      {
+        "id": "CASE_031",
+        "category": "missing_strength_trap",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 9.76
+      },
+      {
+        "id": "CASE_032",
+        "category": "missing_strength_trap",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 9.92
+      },
+      {
+        "id": "CASE_033",
+        "category": "missing_duration_trap",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 11.17
+      },
+      {
+        "id": "CASE_034",
+        "category": "missing_duration_trap",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 9.98
+      },
+      {
+        "id": "CASE_035",
+        "category": "missing_duration_trap",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 10.72
+      },
+      {
+        "id": "CASE_036",
+        "category": "missing_route_trap",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 9.89
+      },
+      {
+        "id": "CASE_037",
+        "category": "missing_route_trap",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 10.55
+      },
+      {
+        "id": "CASE_038",
+        "category": "missing_route_trap",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 10.63
+      },
+      {
+        "id": "CASE_039",
+        "category": "unknown_medicine_trap",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 11.24
+      },
+      {
+        "id": "CASE_040",
+        "category": "unknown_medicine_trap",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 19.21
+      },
+      {
+        "id": "CASE_041",
+        "category": "unknown_medicine_trap",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 13.45
+      },
+      {
+        "id": "CASE_042",
+        "category": "spelling_mistakes",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 9.71
+      },
+      {
+        "id": "CASE_043",
+        "category": "spelling_mistakes",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 9.24
+      },
+      {
+        "id": "CASE_044",
+        "category": "spelling_mistakes",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 8.65
+      },
+      {
+        "id": "CASE_045",
+        "category": "phonetic_transcription_errors",
+        "passed": false,
+        "failures": [
+          "Status mismatch: expected 'VALIDATED', got 'CONFLICT'"
+        ],
+        "latency_ms": 9.25
+      },
+      {
+        "id": "CASE_046",
+        "category": "phonetic_transcription_errors",
+        "passed": false,
+        "failures": [
+          "Status mismatch: expected 'VALIDATED', got 'CONFLICT'"
+        ],
+        "latency_ms": 9.25
+      },
+      {
+        "id": "CASE_047",
+        "category": "phonetic_transcription_errors",
+        "passed": false,
+        "failures": [
+          "Status mismatch: expected 'VALIDATED', got 'CONFLICT'"
+        ],
+        "latency_ms": 10.42
+      },
+      {
+        "id": "CASE_048",
+        "category": "hinglish_mixed",
+        "passed": false,
+        "failures": [
+          "Status mismatch: expected 'VALIDATED', got 'CONFLICT'"
+        ],
+        "latency_ms": 9.07
+      },
+      {
+        "id": "CASE_049",
+        "category": "hinglish_mixed",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 10.96
+      },
+      {
+        "id": "CASE_050",
+        "category": "hinglish_mixed",
+        "passed": false,
+        "failures": [
+          "Status mismatch: expected 'VALIDATED', got 'CONFLICT'"
+        ],
+        "latency_ms": 9.76
+      },
+      {
+        "id": "CASE_051",
+        "category": "hinglish_mixed",
+        "passed": false,
+        "failures": [
+          "Status mismatch: expected 'VALIDATED', got 'CONFLICT'"
+        ],
+        "latency_ms": 9.58
+      },
+      {
+        "id": "CASE_052",
+        "category": "asr_acoustic_errors",
+        "passed": false,
+        "failures": [
+          "Status mismatch: expected 'VALIDATED', got 'CONFLICT'"
+        ],
+        "latency_ms": 8.91
+      },
+      {
+        "id": "CASE_053",
+        "category": "asr_acoustic_errors",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 9.2
+      },
+      {
+        "id": "CASE_054",
+        "category": "asr_acoustic_errors",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 10.56
+      },
+      {
+        "id": "CASE_055",
+        "category": "ambiguous_instructions",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 9.98
+      },
+      {
+        "id": "CASE_056",
+        "category": "ambiguous_instructions",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 10.22
+      },
+      {
+        "id": "CASE_057",
+        "category": "conflicting_information",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 10.75
+      },
+      {
+        "id": "CASE_058",
+        "category": "conflicting_information",
+        "passed": false,
+        "failures": [
+          "Status mismatch: expected 'NEEDS_REVIEW', got 'CONFLICT'"
+        ],
+        "latency_ms": 9.64
+      },
+      {
+        "id": "CASE_059",
+        "category": "non_medication_rejection",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 13.34
+      },
+      {
+        "id": "CASE_060",
+        "category": "non_medication_rejection",
+        "passed": true,
+        "failures": [],
+        "latency_ms": 9.32
+      }
+    ]
+  },
+  "stt_pipeline": {
+    "total_stt_tests": 1,
+    "tests": [
+      {
+        "test_type": "mock_stt_audio",
+        "transcript": "Take Paracetamol 650 mg twice daily for 5 days.",
+        "model_used": "mock",
+        "extracted_items": [
+          {
+            "item_id": 1,
+            "medicine": "Paracetamol 650 mg",
+            "medicine_name": "Paracetamol 650 mg",
+            "raw_medicine_name": null,
+            "matched_drug_id": null,
+            "strength": "650 mg",
+            "dose": null,
+            "dose_unit": null,
+            "frequency": "twice daily",
+            "duration": "5 days",
+            "route": null,
+            "instruction": null,
+            "additional_instruction": null,
+            "status": "VALIDATED",
+            "confidence": 0.9,
+            "evidence": {
+              "medicine": {
+                "field_name": "medicine_name",
+                "source_text": "Paracetamol 650 mg",
+                "value": "Paracetamol 650 mg",
+                "span": {
+                  "start": 5,
+                  "end": 16,
+                  "verbatim": "Paracetamol",
+                  "text": "Paracetamol"
+                },
+                "confidence": 0.9,
+                "source_model": "deterministic"
+              },
+              "strength": {
+                "field_name": "strength",
+                "source_text": "650 mg",
+                "value": "650 mg",
+                "span": {
+                  "start": 17,
+                  "end": 23,
+                  "verbatim": "650 mg",
+                  "text": "650 mg"
+                },
+                "confidence": 0.9,
+                "source_model": "deterministic"
+              },
+              "frequency": {
+                "field_name": "frequency",
+                "source_text": "twice daily",
+                "value": "twice daily",
+                "span": {
+                  "start": 24,
+                  "end": 35,
+                  "verbatim": "twice daily",
+                  "text": "twice daily"
+                },
+                "confidence": 0.9,
+                "source_model": "deterministic"
+              },
+              "duration": {
+                "field_name": "duration",
+                "source_text": "5 days",
+                "value": "5 days",
+                "span": {
+                  "start": 40,
+                  "end": 46,
+                  "verbatim": "5 days",
+                  "text": "5 days"
+                },
+                "confidence": 0.9,
+                "source_model": "deterministic"
+              }
+            },
+            "available_routes": [],
+            "validation_warnings": [],
+            "review_reasons": []
+          }
+        ],
+        "success": true
+      }
+    ]
+  }
+}

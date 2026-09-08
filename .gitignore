@@ -20,6 +20,12 @@ __pycache__/
 # Prescription JSON & Training Datasets
 *.json
 *.jsonl
+!package.json
+!package-lock.json
+!**/package.json
+!**/package-lock.json
+!docs/*.json
+!tests/**/*.json
 naturalized_prescriptions_final.jsonl
 *prescription*.json
 *prescription*.jsonl

@@ -13,6 +13,9 @@ from agents.utils import (
     segment_prescription,
 )
 import prompt
+import logging
+
+logger = logging.getLogger("route_agent")
 
 
 def route_agent(state: AgenticRxState, llm: Any = None) -> Dict[str, Any]:
@@ -42,8 +45,8 @@ def route_agent(state: AgenticRxState, llm: Any = None) -> Dict[str, Any]:
                                 "drug_name": item.get("drug_name", ""),
                                 "route": r_val if r_val else "NONE",
                             })
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"[route_agent] LLM invocation error ({e}), falling back to deterministic route extraction")
 
     if not extracted_routes:
         segments = segment_prescription(input_text)

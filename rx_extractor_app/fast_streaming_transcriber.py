@@ -1,16 +1,16 @@
 """
 fast_streaming_transcriber.py
 ------------------------------
-Ultra-low-latency GPU-accelerated streaming ASR engine.
-RTX 3050 + Whisper tiny fp16 = ~15-25ms inference latency.
-CPU fallback = ~350ms.
-
-Architecture:
-- Model loaded ONCE as module singleton (GPU if available, else CPU)
-- Decode triggered every 0.5s of NEW audio on GPU (1.5s on CPU)
-- Rolling 3s window (GPU) or 4s window (CPU)
-- Returns partial text immediately
+DEPRECATED: This module is retained for backward compatibility only.
+Active streaming audio orchestration has migrated to the canonical STT subsystem:
+    `app.stt.streaming.StreamingTranscriber` and `app.stt.get_stt_manager()`.
 """
+import warnings
+warnings.warn(
+    "fast_streaming_transcriber is deprecated. Use app.stt.streaming.StreamingTranscriber instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 import os
 import sys
 # Prevent torchvision / torchaudio DLL binary incompatibility from crashing transformers on Windows Python 3.13
@@ -19,8 +19,8 @@ sys.modules.setdefault('torchaudio', None)
 
 # Configure CUDA 12 DLL search path for Windows CTranslate2 and PyTorch
 for _cp in [
-    r"C:\Users\ADMIN\AppData\Local\Programs\Ollama\lib\ollama\cuda_v12",
-    r"C:\Users\ADMIN\AppData\Local\Programs\Python\Python313\Lib\site-packages\torch\lib",
+    os.path.expandvars(r"%LOCALAPPDATA%\Programs\Ollama\lib\ollama\cuda_v12"),
+    os.path.expandvars(r"%LOCALAPPDATA%\Programs\Python\Python313\Lib\site-packages\torch\lib"),
 ]:
     if os.path.exists(_cp):
         if _cp not in os.environ.get("PATH", ""):
@@ -232,6 +232,7 @@ def _transcribe_ayush_pcm(audio_np: np.ndarray, sample_rate: int = 16000, vad_fi
         model = _get_ayush_model()
         if model is not None:
             # audio_f32 is float32 normalized between -1.0 and 1.0
+            vad_params = dict(min_speech_duration_ms=250, min_silence_duration_ms=400, threshold=0.5) if vad_filter else None
             segs, info = model.transcribe(
                 audio_f32,
                 beam_size=1,
@@ -241,6 +242,10 @@ def _transcribe_ayush_pcm(audio_np: np.ndarray, sample_rate: int = 16000, vad_fi
                 language="en",
                 task="transcribe",
                 vad_filter=vad_filter,
+                vad_parameters=vad_params,
+                no_speech_threshold=0.6,
+                log_prob_threshold=-1.0,
+                compression_ratio_threshold=2.4,
             )
             raw = " ".join([s.text for s in segs]).strip()
             return _medical_spell_correct(raw)
@@ -289,6 +294,7 @@ class FastLiveTranscriber:
         self.total_received_s = 0.0
         self.last_decode_s = 0.0
         self.last_speech_time = 0.0
+        self.noise_floor = 0.005
         self.is_speaking = False
         self._is_inferring = False
         self._worker_thread = None
@@ -314,14 +320,24 @@ class FastLiveTranscriber:
         # Sub-millisecond VAD via RMS energy of recent 200ms frame
         frame = samples[-min(len(samples), int(self.sample_rate * 0.2)):]
         energy = float(np.sqrt(np.mean(frame ** 2))) if len(frame) > 0 else 0.0
-        self.is_speaking = energy > 0.005
+
+        # Adaptive noise floor tracking (moving average of quiet ambient sound)
+        if energy < 0.015:
+            self.noise_floor = 0.95 * self.noise_floor + 0.05 * energy
+
+        # Dynamic speech threshold: minimum 0.010 RMS and 2.2x ambient noise floor
+        speech_threshold = max(0.010, self.noise_floor * 2.2)
+        self.is_speaking = energy > speech_threshold
         if self.is_speaking:
             self.last_speech_time = self.total_received_s
 
         audio_since_last = self.total_received_s - self.last_decode_s
 
-        # Trigger background inference without blocking audio stream
-        if not self._is_inferring and self.total_received_s >= self.MIN_AUDIO_S and audio_since_last >= self.DECODE_INTERVAL_S:
+        # Only trigger background inference if speech was detected recently (within last 1.8s)
+        # Prevents continuous inference and hallucinations during prolonged silence / room hum
+        has_active_speech = self.is_speaking or (self.last_speech_time > 0 and (self.total_received_s - self.last_speech_time) < 1.8)
+
+        if not self._is_inferring and has_active_speech and self.total_received_s >= self.MIN_AUDIO_S and audio_since_last >= self.DECODE_INTERVAL_S:
             self._trigger_background_inference()
 
         return self._make_partial(0.0)
@@ -392,6 +408,18 @@ class FastLiveTranscriber:
         if len(buf) == 0:
             return {"type": "final", "raw_text": "", "punctuated_text": "", "duration": 0.0, "final_latency_ms": 0.0}
 
+        # Suppress empty / silent recordings (e.g. ambient fan hum with no voice activity)
+        overall_rms = float(np.sqrt(np.mean(buf ** 2))) if len(buf) > 0 else 0.0
+        if self.last_speech_time == 0.0 and overall_rms < 0.008:
+            return {
+                "type": "final",
+                "raw_text": "",
+                "punctuated_text": "",
+                "duration": round(dur, 2),
+                "final_latency_ms": round((time.perf_counter() - t0) * 1000, 1),
+                "model_used": "whisper_ayush",
+            }
+
         # Transcribe the full buffer cleanly via GPU model (<600ms) to ensure zero overlap or dropped tokens
         final_text = _transcribe_ayush_pcm(buf, self.sample_rate, vad_filter=True)
         if not final_text and current_text:
@@ -426,5 +454,6 @@ class FastLiveTranscriber:
         self.total_received_s = 0.0
         self.last_decode_s = 0.0
         self.last_speech_time = 0.0
+        self.noise_floor = 0.005
         self.is_speaking = False
         self._is_inferring = False

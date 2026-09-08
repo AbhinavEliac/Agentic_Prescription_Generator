@@ -4,8 +4,9 @@ agents/medicine_strength_agent.py
 Medicine & Strength Agent:
 Drift-proof extractor for drug names and strengths across any clinical prescription format.
 """
+from __future__ import annotations
 import re
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Set
 from graph_state import AgenticRxState, MedicineItem
 from agents.utils import (
     FORM_PATTERN,
@@ -14,37 +15,24 @@ from agents.utils import (
     safe_parse_json,
     segment_prescription,
 )
-import prompt
 import os
 import json
+import logging
+import prompt
+from app.drugs import get_drug_repository
+
+logger = logging.getLogger("medicine_strength_agent")
 
 DOSAGE_REGEX = r"\d+(?:\.\d+)?\s*(?:mg(?:\/ml|\/g)?|g|mcg|µg|ml|l|iu|units?|%|meq|puffs?|drops?|tablets?|capsules?|sachets?|vials?)"
 
-_DRUG_STRENGTHS_MAP = None
 
-def _get_drug_strengths_map():
-    global _DRUG_STRENGTHS_MAP
-    if _DRUG_STRENGTHS_MAP is None:
-        _DRUG_STRENGTHS_MAP = {}
-        db_path = os.path.join(os.path.dirname(__file__), "..", "..", "Drug_databse", "drugList.json")
-        if os.path.exists(db_path):
-            try:
-                with open(db_path, "r", encoding="utf-8") as f:
-                    data = json.load(f).get("drugData", [])
-                    for item in data:
-                        raw_name = item.get("drug_name", "").upper()
-                        base = re.sub(r"\b(TAB|TABS|TABLET|TABLETS|CAP|CAPS|CAPSULE|CAPSULES|SYP|SYRUP|INJ|INJECTION|DROPS)\b", "", raw_name)
-                        base = re.sub(r"\b\d+(?:\.\d+)?\s*(MG|G|MCG|ML|L|IU|%)\b", "", base)
-                        base = re.sub(r"[^\w\s]", "", base).strip()
-                        strengths = re.findall(r"(\d+(?:\.\d+)?)\s*(?:MG|G|MCG|ML|L|IU|%)\b", raw_name)
-                        if base:
-                            if base not in _DRUG_STRENGTHS_MAP:
-                                _DRUG_STRENGTHS_MAP[base] = set()
-                            for s in strengths:
-                                _DRUG_STRENGTHS_MAP[base].add(s)
-            except Exception:
-                pass
-    return _DRUG_STRENGTHS_MAP
+def _get_drug_strengths_map() -> Dict[str, Set[str]]:
+    """Delegates to canonical DrugRepository for formulary drug strengths map."""
+    try:
+        return get_drug_repository().get_drug_strengths_map()
+    except Exception as e:
+        logger.warning(f"[medicine_strength_agent] Error retrieving drug strengths from DrugRepository: {e}")
+        return {}
 
 
 def medicine_strength_agent(state: AgenticRxState, llm: Any = None) -> Dict[str, Any]:
@@ -86,8 +74,8 @@ def medicine_strength_agent(state: AgenticRxState, llm: Any = None) -> Dict[str,
                                     "drug_name": d_name,
                                     "strength": "NONE" if is_placeholder(strength) else (strength if strength else "NONE"),
                                 })
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"[medicine_strength_agent] LLM invocation error ({e}), falling back to deterministic extraction")
 
     if not extracted_meds:
         segments = segment_prescription(input_text)
@@ -107,7 +95,9 @@ def medicine_strength_agent(state: AgenticRxState, llm: Any = None) -> Dict[str,
                     "strength": "NONE",
                 })
             else:
-                doses = list(re.finditer(DOSAGE_REGEX, clause, re.IGNORECASE))
+                all_doses = list(re.finditer(DOSAGE_REGEX, clause, re.IGNORECASE))
+                titration_spans = [(m.start(), m.end()) for m in re.finditer(r"(?i)\b(?:increase|decrease|reduce|double|taper)\s+(?:the\s+)?(?:dose|dosage)(?:\s+by\s+)?(?:\d+(?:\.\d+)?\s*(?:mg|g|mcg|ml)?)?", clause)]
+                doses = [d for d in all_doses if not any(ts <= d.start() and d.end() <= te for ts, te in titration_spans)]
                 
                 if doses:
                     raw_lead = clause[:doses[0].start()].strip()
