@@ -50,11 +50,17 @@ class ClinicalReconciler:
                 ReconciliationItem(
                     medicine_name=dc.medicine_name,
                     strength=dc.strength,
+                    dose=dc.dose,
+                    dose_unit=dc.dose_unit,
                     frequency=dc.frequency,
                     duration=dc.duration,
                     route=dc.route,
                     instruction=dc.instruction,
                     additional_instruction=dc.additional_instruction,
+                    available_drugs=dc.available_drugs,
+                    did_you_mean=dc.did_you_mean,
+                    did_you_mean_options=dc.did_you_mean_options,
+                    available_routes=dc.available_routes,
                     status=ExtractionStatus.EXTRACTED,
                     confidence=dc.confidence_scores.get("medicine", 0.90),
                     deterministic_candidate=dc,
@@ -70,7 +76,7 @@ class ClinicalReconciler:
         matched_llm_indices = set()
 
         for dc in deterministic_candidates:
-            dc_base = dc.medicine_name.split()[0].upper()
+            dc_base = dc.medicine_name.split()[0].upper() if dc.medicine_name else ""
             
             # Find best matching LLM candidate
             matched_llm: Optional[LLMExtractionCandidate] = None
@@ -78,8 +84,8 @@ class ClinicalReconciler:
             for idx, lc in enumerate(llm_candidates):
                 if idx in matched_llm_indices:
                     continue
-                lc_base = lc.medicine_name.split()[0].upper()
-                if dc_base == lc_base or dc_base in lc.medicine_name.upper() or lc_base in dc.medicine_name.upper():
+                lc_base = lc.medicine_name.split()[0].upper() if lc.medicine_name else ""
+                if dc_base and lc_base and (dc_base == lc_base or dc_base in lc.medicine_name.upper() or lc_base in (dc.medicine_name or "").upper()):
                     matched_llm = lc
                     matched_idx = idx
                     matched_llm_indices.add(idx)
@@ -91,11 +97,17 @@ class ClinicalReconciler:
                     ReconciliationItem(
                         medicine_name=dc.medicine_name,
                         strength=dc.strength,
+                        dose=dc.dose,
+                        dose_unit=dc.dose_unit,
                         frequency=dc.frequency,
                         duration=dc.duration,
                         route=dc.route,
                         instruction=dc.instruction,
                         additional_instruction=dc.additional_instruction,
+                        available_drugs=dc.available_drugs,
+                        did_you_mean=dc.did_you_mean,
+                        did_you_mean_options=dc.did_you_mean_options,
+                        available_routes=dc.available_routes,
                         status=ExtractionStatus.NORMALIZED,
                         confidence=dc.confidence_scores.get("medicine", 0.90),
                         deterministic_candidate=dc,
@@ -115,7 +127,7 @@ class ClinicalReconciler:
                 final_med = dc.medicine_name
             else:
                 # If one includes catalog strength and other doesn't, prefer fuller specification
-                if len(dc.medicine_name) >= len(matched_llm.medicine_name):
+                if len(dc.medicine_name or "") >= len(matched_llm.medicine_name or ""):
                     final_med = dc.medicine_name
                 else:
                     final_med = matched_llm.medicine_name
@@ -187,11 +199,17 @@ class ClinicalReconciler:
                 ReconciliationItem(
                     medicine_name=final_med,
                     strength=final_str,
+                    dose=dc.dose,
+                    dose_unit=dc.dose_unit,
                     frequency=final_freq,
                     duration=final_dur,
                     route=final_route,
                     instruction=final_inst,
                     additional_instruction=final_add,
+                    available_drugs=dc.available_drugs,
+                    did_you_mean=dc.did_you_mean,
+                    did_you_mean_options=dc.did_you_mean_options,
+                    available_routes=dc.available_routes,
                     status=status,
                     confidence=confidence,
                     deterministic_candidate=dc,

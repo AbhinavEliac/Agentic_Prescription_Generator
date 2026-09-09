@@ -1,6 +1,6 @@
 @echo off
 title RxAgent Python FastAPI Backend
-set "PATH=%LOCALAPPDATA%\Programs\Python\Python313;%LOCALAPPDATA%\Programs\Python\Python313\Scripts;C:\Users\%USERNAME%\AppData\Local\Programs\Python\Python313;C:\Users\%USERNAME%\AppData\Local\Programs\Python\Python313\Scripts;%PATH%"
+set "PATH=%LOCALAPPDATA%\Programs\Ollama\lib\ollama\cuda_v12;%LOCALAPPDATA%\Programs\Python\Python313;%LOCALAPPDATA%\Programs\Python\Python313\Scripts;C:\Users\%USERNAME%\AppData\Local\Programs\Python\Python313;C:\Users\%USERNAME%\AppData\Local\Programs\Python\Python313\Scripts;%PATH%"
 cd /d "%~dp0rx_extractor_app"
 echo ========================================================
 echo Starting Agentic Prescription FastAPI Backend (Port 8080)...

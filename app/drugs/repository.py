@@ -24,6 +24,46 @@ from app.drugs.schemas import (
 )
 
 
+def phonetic_backbone(s: str) -> str:
+    """
+    Computes a generalized phonetic consonant backbone based on articulatory acoustics:
+    - Velars/Palatals: C, K, Q, G, J -> 'K'
+    - Labials: B, P, V, F, W, PH -> 'P'
+    - Dentals/Alveolars: D, T, TH -> 'T'
+    - Sibilants: S, Z, C(soft), X -> 'S'
+    - Nasals: M, N -> 'M', 'N'
+    - Liquids: L, R -> 'L', 'R'
+    Compresses consecutive identical articulatory classes and normalizes digraphs.
+    Enables zero-overfitting phonetic matching across speech-to-text accent variations.
+    """
+    if not s:
+        return ""
+    clean = re.sub(r"[^a-zA-Z]", "", s.lower())
+    if not clean:
+        return ""
+    clean = clean.replace("ph", "f").replace("ck", "k").replace("th", "t").replace("sh", "s")
+    c_soft = re.sub(r"c(?=[eiy])", "s", clean)
+    char_map = {
+        'b': 'P', 'p': 'P', 'v': 'P', 'f': 'P', 'w': 'P',
+        'c': 'K', 'k': 'K', 'q': 'K', 'g': 'K', 'j': 'K',
+        'd': 'T', 't': 'T',
+        's': 'S', 'z': 'S', 'x': 'S',
+        'l': 'L',
+        'r': 'R',
+        'm': 'M', 'n': 'N',
+    }
+    encoded = []
+    prev = ""
+    for ch in c_soft:
+        code = char_map.get(ch, "")
+        if code and code != prev:
+            encoded.append(code)
+            prev = code
+        elif not code:
+            prev = ""
+    return "".join(encoded)
+
+
 def soundex(s: str) -> str:
     """Calculates 4-character Soundex code with ph->f phonetic normalization."""
     if not s:
@@ -110,6 +150,8 @@ WELL_KNOWN_CLINICAL_DRUGS: List[Dict[str, Any]] = [
     {"drug_id": "99014", "drug_code": "PANTOP-40", "drug_name": "PANTOP 40 TAB", "drug_type": "b", "generic_name": "PANTOPRAZOLE", "brand_name": "PANTOP", "routes": ["ORAL", "IV"]},
     {"drug_id": "99015", "drug_code": "AMOXYCLAV-625", "drug_name": "AMOXYCLAV 625 TAB", "drug_type": "g", "generic_name": "AMOXICILLIN + CLAVULANIC ACID", "routes": ["ORAL"]},
     {"drug_id": "99016", "drug_code": "CLAVAM-625", "drug_name": "CLAVAM 625 TAB", "drug_type": "b", "generic_name": "AMOXICILLIN + CLAVULANIC ACID", "brand_name": "CLAVAM", "routes": ["ORAL"]},
+    {"drug_id": "99017", "drug_code": "VIT-C-500", "drug_name": "VITAMIN C 500 MG TAB", "drug_type": "g", "generic_name": "ASCORBIC ACID", "brand_name": "VITAMIN C", "routes": ["ORAL"]},
+    {"drug_id": "99018", "drug_code": "AUGMENTIN-625", "drug_name": "AUGMENTIN TAB 625MG", "drug_type": "b", "generic_name": "AMOXICILLIN + CLAVULANIC ACID", "brand_name": "AUGMENTIN", "routes": ["ORAL"]},
 ]
 
 BRAND_TO_GENERIC_MAP: Dict[str, str] = {
@@ -193,6 +235,7 @@ class DrugRepository:
         self.brand_index: Dict[str, List[DrugEntry]] = {}
         self.generic_index: Dict[str, List[DrugEntry]] = {}
         self.soundex_buckets: Dict[str, List[str]] = {}
+        self.phonetic_buckets: Dict[str, List[str]] = {}
         self.prefix_index: Dict[str, List[str]] = {}
         self.route_mappings_by_drug_id: Dict[str, List[str]] = {}
         self.drug_strengths_map: Dict[str, Set[str]] = {}
@@ -330,6 +373,13 @@ class DrugRepository:
                     if base not in bucket:
                         bucket.append(base)
 
+                # Phonetic articulatory backbone bucket
+                pb = phonetic_backbone(base)
+                if pb:
+                    pb_bucket = self.phonetic_buckets.setdefault(pb, [])
+                    if base not in pb_bucket:
+                        pb_bucket.append(base)
+
                 # 3-char prefix index
                 if len(base) >= 3:
                     pref = base[:3]
@@ -347,13 +397,22 @@ class DrugRepository:
                 if len(first_w) >= 4 and first_w != base:
                     self.drugs_by_clean_name.setdefault(first_w, []).append(entry)
                     self.drug_strengths_map.setdefault(first_w, set()).update(all_strengths)
+                    pb_fw = phonetic_backbone(first_w)
+                    if pb_fw and first_w not in self.phonetic_buckets.setdefault(pb_fw, []):
+                        self.phonetic_buckets[pb_fw].append(first_w)
 
             # Brand index
             if brand_name:
                 self.brand_index.setdefault(brand_name.upper(), []).append(entry)
+                pb_bn = phonetic_backbone(brand_name)
+                if pb_bn and brand_name.upper() not in self.phonetic_buckets.setdefault(pb_bn, []):
+                    self.phonetic_buckets[pb_bn].append(brand_name.upper())
             # Generic index
             if generic_name:
                 self.generic_index.setdefault(generic_name.upper(), []).append(entry)
+                pb_gn = phonetic_backbone(generic_name)
+                if pb_gn and generic_name.upper() not in self.phonetic_buckets.setdefault(pb_gn, []):
+                    self.phonetic_buckets[pb_gn].append(generic_name.upper())
 
         # 4. Register official aliases
         for a, b in COMMON_DRUG_ALIASES:
@@ -364,6 +423,9 @@ class DrugRepository:
                 sx = soundex(b)
                 if sx and b not in self.soundex_buckets.setdefault(sx, []):
                     self.soundex_buckets[sx].append(b)
+                pb_b = phonetic_backbone(b)
+                if pb_b and b not in self.phonetic_buckets.setdefault(pb_b, []):
+                    self.phonetic_buckets[pb_b].append(b)
                 if len(b) >= 3:
                     pref = b[:3]
                     if b not in self.prefix_index.setdefault(pref, []):
@@ -378,6 +440,9 @@ class DrugRepository:
                 sx = soundex(a)
                 if sx and a not in self.soundex_buckets.setdefault(sx, []):
                     self.soundex_buckets[sx].append(a)
+                pb_a = phonetic_backbone(a)
+                if pb_a and a not in self.phonetic_buckets.setdefault(pb_a, []):
+                    self.phonetic_buckets[pb_a].append(a)
                 if len(a) >= 3:
                     pref = a[:3]
                     if a not in self.prefix_index.setdefault(pref, []):
@@ -468,8 +533,9 @@ class DrugRepository:
 
         return None
 
-    def find_fuzzy(self, name: str, min_confidence: float = 0.75, limit: int = 5) -> List[DrugMatch]:
-        """Finds candidate drug entries for spelling errors using Soundex + Levenshtein distance.
+    def find_fuzzy(self, name: str, min_confidence: float = 0.68, limit: int = 5) -> List[DrugMatch]:
+        """Finds candidate drug entries for spelling/ASR acoustic errors using articulatory phonetics,
+        Soundex, prefix tree, and Levenshtein distance.
         Guarantees zero hallucination: returns empty list if no candidate exceeds min_confidence.
         """
         if not name:
@@ -478,36 +544,64 @@ class DrugRepository:
         if not base or len(base) < 3:
             return []
 
-        candidates: List[DrugMatch] = []
-        seen_ids: Set[str] = set()
-
         # Check exact/normalized first
         exact = self.find_normalized(base)
         if exact:
             return [DrugMatch(drug=exact, similarity=1.0, confidence=1.0, matched_via="NORMALIZED")]
 
-        # Query Soundex bucket
-        sx = soundex(base)
-        bucket_bases = list(self.soundex_buckets.get(sx, []))
+        is_multi_word = " " in base
+        concat_base = re.sub(r"\s+", "", base) if is_multi_word else base
 
-        # Query 3-char prefix
-        pref = base[:3]
-        for p_base in self.prefix_index.get(pref, []):
-            if p_base not in bucket_bases:
-                bucket_bases.append(p_base)
+        if is_multi_word:
+            exact_concat = self.find_normalized(concat_base)
+            if exact_concat:
+                return [DrugMatch(drug=exact_concat, similarity=1.0, confidence=1.0, matched_via="NORMALIZED_CONCAT")]
 
-        scored_bases: List[Tuple[float, str]] = []
-        for cand_base in bucket_bases:
-            dist = levenshtein_distance(base, cand_base)
-            max_len = max(len(base), len(cand_base))
-            sim = 1.0 - (dist / max_len) if max_len > 0 else 0.0
-            if sim >= min_confidence:
-                scored_bases.append((sim, cand_base))
+        candidates: List[DrugMatch] = []
+        seen_ids: Set[str] = set()
 
-        # Sort by similarity descending
-        scored_bases.sort(key=lambda x: x[0], reverse=True)
+        # Collect candidate bases from phonetic backbone, soundex, and prefix tree
+        pb_base = phonetic_backbone(base)
+        pb_concat = phonetic_backbone(concat_base) if is_multi_word else pb_base
+        sx_base = soundex(base)
 
-        for sim, cand_base in scored_bases:
+        candidate_bases: Set[str] = set()
+        if pb_base and pb_base in self.phonetic_buckets:
+            candidate_bases.update(self.phonetic_buckets[pb_base])
+        if is_multi_word and pb_concat and pb_concat in self.phonetic_buckets:
+            candidate_bases.update(self.phonetic_buckets[pb_concat])
+        if sx_base and sx_base in self.soundex_buckets:
+            candidate_bases.update(self.soundex_buckets[sx_base])
+        if len(base) >= 3:
+            pref = base[:3]
+            candidate_bases.update(self.prefix_index.get(pref, []))
+        if is_multi_word and len(concat_base) >= 3:
+            pref_c = concat_base[:3]
+            candidate_bases.update(self.prefix_index.get(pref_c, []))
+
+        scored_bases: List[Tuple[float, float, str, str]] = []  # (confidence, similarity, cand_base, match_via)
+
+        for cand_base in candidate_bases:
+            dist1 = levenshtein_distance(base, cand_base)
+            dist2 = levenshtein_distance(concat_base, cand_base) if is_multi_word else 999
+            best_dist = min(dist1, dist2)
+            eff_len = len(concat_base) if (is_multi_word and dist2 < dist1) else len(base)
+            max_len = max(eff_len, len(cand_base))
+            sim = 1.0 - (best_dist / max_len) if max_len > 0 else 0.0
+
+            pb_cand = phonetic_backbone(cand_base)
+            is_pb_match = bool(pb_cand and (pb_cand == pb_base or (is_multi_word and pb_cand == pb_concat)))
+
+            match_via = "PHONETIC" if is_pb_match else ("SOUNDEX" if sx_base == soundex(cand_base) else "LEVENSHTEIN")
+            conf = max(sim, 0.88) if is_pb_match else sim
+
+            if conf >= min_confidence or (is_pb_match and sim >= 0.50):
+                scored_bases.append((conf, sim, cand_base, match_via))
+
+        # Sort by confidence descending, then similarity descending
+        scored_bases.sort(key=lambda x: (x[0], x[1]), reverse=True)
+
+        for conf, sim, cand_base, match_via in scored_bases:
             entries = self.drugs_by_clean_name.get(cand_base, [])
             for entry in entries:
                 if entry.drug_id not in seen_ids:
@@ -516,8 +610,8 @@ class DrugRepository:
                         DrugMatch(
                             drug=entry,
                             similarity=sim,
-                            confidence=sim,
-                            matched_via="SOUNDEX" if sx == soundex(cand_base) else "LEVENSHTEIN",
+                            confidence=conf,
+                            matched_via=match_via,
                         )
                     )
                     if len(candidates) >= limit:
@@ -748,31 +842,190 @@ class DrugRepository:
         ]
 
     def find_did_you_mean(self, query: str) -> Optional[str]:
-        """Phonetic fuzzy drug name recommendation using Soundex + Levenshtein."""
+        """Phonetic fuzzy drug name recommendation using articulatory acoustics + Soundex + Levenshtein."""
+        top = self.find_top_did_you_mean(query, limit=1)
+        if top:
+            return top[0]["base_name"]
+        return None
+
+    def find_top_did_you_mean(
+        self,
+        query: str,
+        limit: int = 3,
+        min_confidence: float = 0.55,
+    ) -> List[Dict[str, Any]]:
+        """
+        Phonetic fuzzy drug name recommendation returning up to `limit` (maximum 3)
+        similarly spelt medicines from Drug_database.
+        Each candidate contains:
+          - drug_name: Full formulary product name (e.g. 'CROCIN 650 TAB')
+          - base_name: Base drug/active substance (e.g. 'CROCIN')
+          - drug_id: Formulary ID
+          - confidence: Match score [0.0 - 1.0]
+          - dose: First registered formulation strength
+          - dose_unit: 'mg' or clinical unit
+          - available_routes: List of permissible routes
+          - available_drugs: List of same-dose formulations for dropdown
+        """
         clean_q = clean_drug_base_name(query)
         if not clean_q or len(clean_q) < 3:
-            return None
+            return []
 
         # If exact match exists, no recommendation needed
-        if clean_q in self.drugs_by_clean_name:
+        if clean_q in self.drugs_by_clean_name or clean_q in self.brand_index or clean_q in self.generic_index:
+            return []
+
+        matches = self.find_fuzzy(clean_q, min_confidence=min_confidence, limit=15)
+        if not matches:
+            return []
+
+        # Deduplicate and group by distinct drug name or base name
+        results: List[Dict[str, Any]] = []
+        seen_names: Set[str] = set()
+
+        for m in matches:
+            d = m.drug
+            disp_name = d.drug_name
+            clean_b = d.base_name.upper()
+
+            # Ensure distinct drugs in the top recommendations
+            first_str = sorted(d.strength_values)[0] if d.strength_values else ''
+            dedup_key = f"{clean_b}_{first_str}"
+            if dedup_key in seen_names:
+                continue
+            seen_names.add(dedup_key)
+
+            target_dose = first_str if first_str else None
+            same_dose = self.find_same_dose_formulations(d.drug_id, target_dose or "")
+
+            results.append({
+                "drug_name": disp_name,
+                "base_name": d.base_name.title(),
+                "drug_id": d.drug_id,
+                "confidence": round(m.confidence, 3),
+                "similarity": round(m.similarity, 3),
+                "dose": target_dose,
+                "dose_unit": "mg" if target_dose else "",
+                "available_routes": d.routes,
+                "available_drugs": same_dose,
+            })
+            if len(results) >= limit:
+                break
+
+        return results
+
+    def find_composite_formulation(
+        self,
+        base_name: str,
+        int1: float,
+        int2: float,
+        unit: str = "mg",
+    ) -> Optional[DrugEntry]:
+        """
+        Checks if a combination dosage (int1 + int2) maps to a registered formulation
+        with total sum int0 = int1 + int2 (e.g. 500mg + 125mg = 625mg -> AUGMENTIN 625).
+        """
+        if not base_name:
             return None
 
-        sx = soundex(clean_q)
-        candidates = self.soundex_buckets.get(sx, [])
-        if not candidates:
-            return None
+        sum_int = int(round(int1 + int2))
+        sum_str = str(sum_int)
 
-        best_match = None
-        best_dist = 999
-        for cand in candidates:
-            dist = levenshtein_distance(clean_q, cand)
-            if dist < best_dist and dist <= 3:
-                best_dist = dist
-                best_match = cand
+        clean_b = clean_drug_base_name(base_name).upper()
+        entries = self.drugs_by_clean_name.get(clean_b, [])
+        if not entries and clean_b in self.brand_index:
+            entries = self.brand_index[clean_b]
+        if not entries:
+            first_w = clean_b.split()[0]
+            entries = self.drugs_by_clean_name.get(first_w, [])
+        if not entries:
+            fuzzy = self.find_fuzzy(clean_b, min_confidence=0.70, limit=3)
+            if fuzzy:
+                entries = [f.drug for f in fuzzy]
 
-        if best_match:
-            return best_match.title()
+        for e in entries:
+            # Check if total sum is in strength values
+            if sum_str in e.strength_values:
+                return e
+            # Check if sum is in drug_name or drug_code
+            if re.search(rf"\b{sum_str}\b", e.drug_name) or sum_str in e.drug_code:
+                return e
+
         return None
+
+    def find_same_dose_formulations(self, drug_name_or_id: str, dose: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Retrieves all formulations in the master formulary for the specified drug
+        that match the requested dose/strength integer.
+        Provides dropdown data for UI table inline selection.
+        """
+        if not drug_name_or_id:
+            return []
+
+        entry = self.find_exact(drug_name_or_id) or self.find_normalized(drug_name_or_id)
+        if not entry:
+            fuzzy = self.find_fuzzy(drug_name_or_id, min_confidence=0.65, limit=1)
+            if fuzzy:
+                entry = fuzzy[0].drug
+
+        candidate_entries: List[DrugEntry] = []
+        seen_ids: Set[str] = set()
+
+        if entry:
+            base = entry.base_name
+            if base in self.drugs_by_clean_name:
+                for d in self.drugs_by_clean_name[base]:
+                    if d.drug_id not in seen_ids:
+                        seen_ids.add(d.drug_id)
+                        candidate_entries.append(d)
+            if entry.brand_name and entry.brand_name in self.brand_index:
+                for d in self.brand_index[entry.brand_name]:
+                    if d.drug_id not in seen_ids:
+                        seen_ids.add(d.drug_id)
+                        candidate_entries.append(d)
+            if entry.generic_name and entry.generic_name in self.generic_index:
+                for d in self.generic_index[entry.generic_name]:
+                    if d.drug_id not in seen_ids:
+                        seen_ids.add(d.drug_id)
+                        candidate_entries.append(d)
+        else:
+            base = clean_drug_base_name(drug_name_or_id)
+            if base in self.drugs_by_clean_name:
+                for d in self.drugs_by_clean_name[base]:
+                    if d.drug_id not in seen_ids:
+                        seen_ids.add(d.drug_id)
+                        candidate_entries.append(d)
+
+        target_num = None
+        if dose:
+            m = re.search(r"(\d+(?:\.\d+)?%?)", str(dose).strip())
+            if m:
+                target_num = m.group(1).upper()
+
+        matching_dose = []
+        if target_num:
+            for d in candidate_entries:
+                if (
+                    target_num in d.strength_values
+                    or re.search(rf"\b{re.escape(target_num)}\b", d.drug_name.upper())
+                    or re.search(rf"\b{re.escape(target_num)}\b", d.drug_code.upper())
+                ):
+                    matching_dose.append(d)
+
+        results = matching_dose if matching_dose else candidate_entries
+
+        return [
+            {
+                "drug_id": d.drug_id,
+                "drug_code": d.drug_code,
+                "drug_name": d.drug_name,
+                "base_name": d.base_name,
+                "drug_type": d.drug_type.value,
+                "routes": d.routes,
+                "strengths": sorted(list(d.strength_values)),
+            }
+            for d in results[:30]
+        ]
 
     def get_reference_data(self) -> ReferenceDataResponse:
         """Returns reference datasets for schedules, dose units, and anatomical routes."""

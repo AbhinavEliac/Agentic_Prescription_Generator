@@ -15,14 +15,16 @@ import re
 from typing import Optional, Tuple, List
 
 FREQUENCY_PATTERNS = [
+    # Combined phrase + doctor numeric schedule (e.g. 'twice daily 101', 'twice daily 1-0-1', 'once daily 100', 'thrice daily 111')
+    r"(?i)\b(?:twice|once|thrice|three\s+times|four\s+times|\d+\s+times)\s+(?:daily|a\s+day)\s*[\(\s-]*(?:101|1-0-1|111|1-1-1|100|1-0-0|010|0-1-0|001|0-0-1|110|1-1-0|011|0-1-1|1111|1-1-1-1)[\)\s]*",
+    # Specific doctor schedule patterns with preceding descriptor: e.g. "twice daily(1-0-1)", "once daily(0-0-1)"
+    r"(?i)\b(?:twice|once|thrice|three\s+times|four\s+times|\d+\s+times)\s+(?:daily|a\s+day)\s*(?:\([0-9\-\/]+\))",
     # Ambiguous frequency patterns requiring clinical review
     r"(?i)\b(?:once|twice|thrice|\d+\s+times)\s+or\s+(?:once|twice|thrice|\d+\s+times)\s+(?:daily|a\s+day)\b",
     r"(?i)\bas\s+needed\s+but\s+not\s+more\s+than\s+(?:once|twice|thrice|\w+)(?:\s+times)?\s+daily\b",
     r"(?i)\bnot\s+more\s+than\s+(?:once|twice|thrice|\w+)(?:\s+times)?\s+daily\b",
     # Up to N times daily as needed
     r"(?i)\bup\s+to\s+\w+\s+times\s+daily(?:\s+as\s+needed)?\b",
-    # Specific doctor schedule patterns with preceding descriptor: e.g. "twice daily(1-0-1)", "once daily(0-0-1)"
-    r"(?i)\b(?:twice|once|thrice|three\s+times|four\s+times|\d+\s+times)\s+(?:daily|a\s+day)\s*(?:\([0-9\-\/]+\))",
     # Hour intervals
     r"(?i)\bevery\s+\d+(?:\s+to\s+\d+)?\s*(?:hours?|hrs?|days?|weeks?|months?)\b",
     # Time of day / daily intervals
@@ -54,23 +56,60 @@ FREQUENCY_PATTERNS = [
 ]
 
 NUMERIC_SCHEDULE_NORMALIZATION = {
-    "101": "twice daily(1-0-1)",
-    "1-0-1": "twice daily(1-0-1)",
-    "111": "thrice daily(1-1-1)",
-    "1-1-1": "thrice daily(1-1-1)",
-    "100": "once daily(1-0-0)",
-    "1-0-0": "once daily(1-0-0)",
-    "010": "once daily(0-1-0)",
-    "0-1-0": "once daily(0-1-0)",
-    "001": "once daily(0-0-1)",
-    "0-0-1": "once daily(0-0-1)",
-    "110": "twice daily(1-1-0)",
-    "1-1-0": "twice daily(1-1-0)",
-    "011": "twice daily(0-1-1)",
-    "0-1-1": "twice daily(0-1-1)",
-    "1111": "four times daily(1-1-1-1)",
-    "1-1-1-1": "four times daily(1-1-1-1)",
+    "101": "Twice a day (1-0-1)",
+    "1-0-1": "Twice a day (1-0-1)",
+    "111": "Thrice a day (1-1-1)",
+    "1-1-1": "Thrice a day (1-1-1)",
+    "100": "Once a day (1-0-0)",
+    "1-0-0": "Once a day (1-0-0)",
+    "010": "Once a day (0-1-0)",
+    "0-1-0": "Once a day (0-1-0)",
+    "001": "Once a day (bedtime)",
+    "0-0-1": "Once a day (bedtime)",
+    "110": "Twice a day (1-1-0)",
+    "1-1-0": "Twice a day (1-1-0)",
+    "011": "Twice a day (0-1-1)",
+    "0-1-1": "Twice a day (0-1-1)",
+    "1111": "Four times a day (1-1-1-1)",
+    "1-1-1-1": "Four times a day (1-1-1-1)",
 }
+
+
+def canonicalize_frequency(raw_freq: str) -> str:
+    """Canonicalizes raw frequency string including doctor habits like 'twice daily 101'."""
+    clean = raw_freq.strip()
+    clean_lower = clean.lower()
+
+    # Clean off meal words trailing frequency
+    clean = re.sub(r"(?i)\s+(?:before|after)\s+(?:food|breakfast|meals|lunch|dinner)$", "", clean).strip()
+
+    # Check for combined phrase + numeric pattern (e.g. 'twice daily 101' -> 'Twice a day (1-0-1)')
+    m_num = re.search(r"\b(101|1-0-1|111|1-1-1|100|1-0-0|010|0-1-0|001|0-0-1|110|1-1-0|011|0-1-1|1111|1-1-1-1)\b", clean)
+    if m_num:
+        code = m_num.group(1)
+        if code in NUMERIC_SCHEDULE_NORMALIZATION:
+            return NUMERIC_SCHEDULE_NORMALIZATION[code]
+
+    if clean in NUMERIC_SCHEDULE_NORMALIZATION:
+        return NUMERIC_SCHEDULE_NORMALIZATION[clean]
+
+    # Standard natural language frequencies
+    if clean_lower in ("twice daily", "twice a day", "bd", "bid"):
+        return "Twice a day (1-0-1)"
+    if clean_lower in ("once daily", "once a day", "od", "daily"):
+        return "Once a day (1-0-0)"
+    if clean_lower in ("three times daily", "thrice daily", "three times a day", "tds", "tid"):
+        return "Thrice a day (1-1-1)"
+    if clean_lower in ("four times daily", "four times a day", "qid", "qds"):
+        return "Four times a day (1-1-1-1)"
+    if clean_lower in ("at bedtime", "bedtime", "hs", "at night"):
+        return "Once a day (bedtime)"
+    if clean_lower in ("sos", "as needed", "if required", "prn"):
+        return "If Required (SOS)"
+    if clean_lower in ("stat", "immediately"):
+        return "Stat (Immediate single dose only)"
+
+    return clean
 
 
 def extract_frequency(
@@ -87,22 +126,14 @@ def extract_frequency(
     for pat in FREQUENCY_PATTERNS:
         m = re.search(pat, core_clause)
         if m:
-            raw_freq = m.group(0).strip()
-            # Clean off any meal words trailing the frequency match
-            clean_freq = re.sub(r"(?i)\s+(?:before|after)\s+(?:food|breakfast|meals|lunch|dinner)$", "", raw_freq).strip()
-            # Standardize numeric schedule if standalone
-            if clean_freq in NUMERIC_SCHEDULE_NORMALIZATION:
-                clean_freq = NUMERIC_SCHEDULE_NORMALIZATION[clean_freq]
+            clean_freq = canonicalize_frequency(m.group(0))
             return clean_freq, (m.start(), m.start() + len(clean_freq)), 0.95
 
     # 2. Search anywhere in the clause
     for pat in FREQUENCY_PATTERNS:
         m = re.search(pat, clause_text)
         if m:
-            raw_freq = m.group(0).strip()
-            clean_freq = re.sub(r"(?i)\s+(?:before|after)\s+(?:food|breakfast|meals|lunch|dinner)$", "", raw_freq).strip()
-            if clean_freq in NUMERIC_SCHEDULE_NORMALIZATION:
-                clean_freq = NUMERIC_SCHEDULE_NORMALIZATION[clean_freq]
+            clean_freq = canonicalize_frequency(m.group(0))
             return clean_freq, (m.start(), m.start() + len(clean_freq)), 0.90
 
     # 3. Check broadcast/plural coreference if full prescription text provided
@@ -118,10 +149,7 @@ def extract_frequency(
             for pat in FREQUENCY_PATTERNS:
                 fm = re.search(pat, cand)
                 if fm:
-                    raw_freq = fm.group(0).strip()
-                    clean_freq = re.sub(r"(?i)\s+(?:before|after)\s+(?:food|breakfast|meals|lunch|dinner)$", "", raw_freq).strip()
-                    if clean_freq in NUMERIC_SCHEDULE_NORMALIZATION:
-                        clean_freq = NUMERIC_SCHEDULE_NORMALIZATION[clean_freq]
+                    clean_freq = canonicalize_frequency(fm.group(0))
                     return clean_freq, None, 0.85
 
         # Check singular coreference: e.g. "Take this medicine twice daily"
@@ -134,10 +162,7 @@ def extract_frequency(
             for pat in FREQUENCY_PATTERNS:
                 fm = re.search(pat, cand)
                 if fm:
-                    raw_freq = fm.group(0).strip()
-                    clean_freq = re.sub(r"(?i)\s+(?:before|after)\s+(?:food|breakfast|meals|lunch|dinner)$", "", raw_freq).strip()
-                    if clean_freq in NUMERIC_SCHEDULE_NORMALIZATION:
-                        clean_freq = NUMERIC_SCHEDULE_NORMALIZATION[clean_freq]
+                    clean_freq = canonicalize_frequency(fm.group(0))
                     return clean_freq, None, 0.80
 
     return None, None, 0.0

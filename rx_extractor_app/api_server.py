@@ -81,12 +81,14 @@ async def lifespan(app_instance):
             from app.stt import get_stt_manager
             mgr = get_stt_manager()
             engine = mgr.get_engine("whisper_ayush")
-            # Run 0.1s warm-up pass
-            dummy = np.zeros(1600, dtype=np.float32)
+            # Run 1.0s warm-up pass with non-zero signal to trigger full CUDA kernel compilation
+            t = np.linspace(0, 1.0, 16000, endpoint=False, dtype=np.float32)
+            dummy = (0.05 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
             engine.transcribe(dummy)
             print("[Startup] Whisper Ayush canonical engine pre-warmed and ready.")
         except Exception as e:
             print(f"[Startup] Whisper Ayush pre-warming notice: {e}")
+
     threading.Thread(target=_prewarm, daemon=True).start()
     yield
     print("[Shutdown] FastAPI server shutting down.")
@@ -283,8 +285,9 @@ def search_drugs(
 @app.get("/api/drugs/did-you-mean")
 def drug_did_you_mean(q: str = Query("", description="Misspelled drug name query")):
     """Phonetic fuzzy drug name recommendation using Soundex + Levenshtein distance."""
-    suggestion = drug_repo.find_did_you_mean(q)
-    return {"query": q, "suggestion": suggestion}
+    top_suggestions = drug_repo.find_top_did_you_mean(q, limit=3)
+    suggestion = top_suggestions[0]["drug_name"] if top_suggestions else None
+    return {"query": q, "suggestion": suggestion, "suggestions": top_suggestions}
 
 
 @app.get("/api/drugs/{drug_id}/routes")
@@ -371,12 +374,8 @@ def extract_prescription(req: PrescriptionExtractionRequest, request: Request = 
             model_file = config.MODEL_OPTIONS.get(target_model, config.MODEL_NAME)
             proc_id = db.create_process(p_name, req.device or "cpu", csv_path, xlsx_path, model_name=model_file, model_label=target_model)
 
-    # 2. Resolve execution mode
-    pipeline_mode = PipelineMode.FAST if (
-        req.fast_mode or 
-        req.mode == ExtractionMode.DETERMINISTIC_ONLY or 
-        req.llm_model == "fast_relational"
-    ) else PipelineMode.STANDARD
+    # 2. Resolve execution mode (Sub-15ms FAST mode default for live dictation and real-time UI)
+    pipeline_mode = PipelineMode.STANDARD if req.mode == ExtractionMode.LLM_AGENT else PipelineMode.FAST
 
     t0 = time.perf_counter()
     canonical_rx = canonical_pipeline.extract(query, mode=pipeline_mode)
@@ -612,12 +611,15 @@ async def websocket_transcribe(websocket: WebSocket):
             # Handle binary audio frame (PCM16 raw samples from Web Audio API)
             if "bytes" in message and message["bytes"]:
                 audio_bytes = message["bytes"]
-                partial_res = streamer.feed_pcm16(audio_bytes)
-                # Only push on VAD state transitions or non-empty speech text to avoid flooding
+                partial_res = await asyncio.to_thread(streamer.feed_pcm16, audio_bytes)
+                # Push on VAD state transitions to update green/gray indicator dot
                 curr_speech = partial_res.get("is_speech", False)
                 if curr_speech != last_sent_speech_state:
                     last_sent_speech_state = curr_speech
-                    await out_queue.put(partial_res)
+                    # If not already queued by on_partial_callback, send state transition
+                    if not (partial_res.get("decoded") or partial_res.get("boundary")):
+                        await out_queue.put(partial_res)
+
 
             # Handle text/control JSON command
             elif "text" in message and message["text"]:
@@ -653,4 +655,12 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8080))
     print(f"[INFO] Starting Agentic Prescription Extractor FastAPI Server on port {port}...")
-    uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
+    root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    uvicorn.run(
+        "api_server:app",
+        host="127.0.0.1",
+        port=port,
+        log_level="info",
+        reload=True,
+        reload_dirs=[os.path.dirname(__file__), os.path.join(root_dir, "app")],
+    )

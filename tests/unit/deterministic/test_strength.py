@@ -16,7 +16,7 @@ def drug_repo():
 
 def test_dual_dose_splitting_and_titration_shielding(drug_repo):
     clause = "Take one tablet of Paracetamol 650 mg 20 mg twice daily(1-0-1) for 5 days, increase the dose by 100 mg after 7 days."
-    drug_name, order_strength, span, conf = extract_strength_and_formulation(
+    drug_name, order_strength, dose, dose_unit, span, conf, combo_opts = extract_strength_and_formulation(
         clause_text=clause,
         base_drug_name="Paracetamol",
         drug_repo=drug_repo,
@@ -31,7 +31,7 @@ def test_dual_dose_splitting_and_titration_shielding(drug_repo):
 def test_catalog_single_dose_binding(drug_repo):
     # Aten 50 exists in formulary DB -> 50 binds to drug name and order strength is preserved
     clause = "Administer ATEN tablet 50mg by mouth every morning before food"
-    drug_name, order_strength, span, conf = extract_strength_and_formulation(
+    drug_name, order_strength, dose, dose_unit, span, conf, combo_opts = extract_strength_and_formulation(
         clause_text=clause,
         base_drug_name="ATEN",
         drug_repo=drug_repo,
@@ -43,7 +43,7 @@ def test_catalog_single_dose_binding(drug_repo):
 def test_custom_single_dose_as_order_strength(drug_repo):
     # Vitamin C 500 mg: 500 is in DB, so binds to formulation name and order strength is preserved
     clause_vit = "Take Vitamin C 500 mg alongside it"
-    drug_name, order_strength, span, conf = extract_strength_and_formulation(
+    drug_name, order_strength, dose, dose_unit, span, conf, combo_opts = extract_strength_and_formulation(
         clause_text=clause_vit,
         base_drug_name="Vitamin C",
         drug_repo=drug_repo,
@@ -53,9 +53,25 @@ def test_custom_single_dose_as_order_strength(drug_repo):
 
     # Custom strength not in DB (e.g. 875 mg): treated as order strength
     clause_custom = "Take Amoxicillin 875 mg once daily"
-    drug_name2, order_strength2, span2, conf2 = extract_strength_and_formulation(
+    drug_name2, order_strength2, dose2, dose_unit2, span2, conf2, combo_opts2 = extract_strength_and_formulation(
         clause_text=clause_custom,
         base_drug_name="Amoxicillin",
         drug_repo=drug_repo,
     )
     assert order_strength2 == "875 mg"
+
+
+def test_combination_dose_detection(drug_repo):
+    # Combination dose (500mg + 125mg): composite formulation 625mg exists in Drug_database
+    clause = "Augmentin 500mg + 125mg twice daily for 5 days"
+    drug_name, order_strength, dose, dose_unit, span, conf, combo_opts = extract_strength_and_formulation(
+        clause_text=clause,
+        base_drug_name="Augmentin",
+        drug_repo=drug_repo,
+    )
+    assert order_strength == "500 + 125 mg"
+    assert dose is None  # Does NOT automatically make 500mg as dose and drop 125mg!
+    assert len(combo_opts) >= 1
+    # Check that composite formulation 625mg is suggested in Did-You-Mean options
+    assert any("625" in opt["drug_name"] for opt in combo_opts)
+

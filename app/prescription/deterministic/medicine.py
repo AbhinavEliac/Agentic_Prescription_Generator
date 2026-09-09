@@ -119,33 +119,92 @@ def extract_medicine_candidate(
     clause_text: str,
     seed_drug_name: Optional[str] = None,
     drug_repo: Optional[DrugRepository] = None,
-) -> Tuple[Optional[str], Optional[Tuple[int, int]], float]:
+) -> Tuple[Optional[str], Optional[Tuple[int, int]], float, Optional[str], Optional[str], List[Dict[str, Any]]]:
     """
-    Deterministically extracts the candidate medicine name and its character span within the clause.
-    Returns (candidate_name, (start_idx, end_idx), confidence).
+    Deterministically extracts and grounds the candidate medicine name against Drug_database.
+    Returns:
+      (matched_base_name, span, confidence, did_you_mean, matched_drug_id, did_you_mean_options)
+    Strictly returns None if the candidate does not exist in Drug_database (neither exact, normalized, nor phonetic).
     """
-    if seed_drug_name:
-        cleaned = clean_candidate_name(seed_drug_name)
-        if is_valid_medication_name(cleaned):
-            idx = clause_text.lower().find(cleaned.lower())
-            span = (idx, idx + len(cleaned)) if idx >= 0 else (0, len(cleaned))
-            return cleaned, span, 0.95
+    if not clause_text or not clause_text.strip():
+        return None, None, 0.0, None, None, []
 
-    # Look for drug name preceding any dosage pattern (supports grams, gm, mg, mcg, etc.)
+    # Helper to test and ground a candidate string against Drug_database
+    def _test_grounding(cand: str) -> Optional[Tuple[str, float, Optional[str], Optional[str], List[Dict[str, Any]]]]:
+        if not cand or not is_valid_medication_name(cand):
+            return None
+        cleaned = clean_candidate_name(cand)
+        if not cleaned or not is_valid_medication_name(cleaned):
+            return None
+
+        if not drug_repo:
+            return cleaned, 0.85, None, None, []
+
+        # 1. Exact or normalized match in Drug_database
+        exact = drug_repo.find_exact(cleaned) or drug_repo.find_normalized(cleaned)
+        if exact:
+            return cleaned, 0.95, None, exact.drug_id, []
+
+        # Also check concatenated multi-word token (e.g. "parasita mall" -> "parasitamall")
+        if " " in cleaned:
+            concat = re.sub(r"\s+", "", cleaned)
+            exact_c = drug_repo.find_exact(concat) or drug_repo.find_normalized(concat)
+            if exact_c:
+                return cleaned, 0.95, None, exact_c.drug_id, []
+
+        # 2. Phonetic sound-alike / Did-you-mean match (e.g. "grocin" -> "Crocin", "parasita mall" -> "Paracetamol")
+        top_dym = drug_repo.find_top_did_you_mean(cleaned, limit=3, min_confidence=0.55)
+        if top_dym:
+            best = top_dym[0]
+            did_you_mean = best["drug_name"]
+            return cleaned, best["confidence"], did_you_mean, best["drug_id"], top_dym
+
+        # Check first token for brand formulations with trailing descriptors
+        tokens = cleaned.split()
+        if len(tokens) >= 2:
+            first_t = tokens[0]
+            if len(first_t) >= 4 and is_valid_medication_name(first_t):
+                exact_t = drug_repo.find_exact(first_t) or drug_repo.find_normalized(first_t)
+                if exact_t:
+                    return cleaned, 0.90, None, exact_t.drug_id, []
+                top_dym_t = drug_repo.find_top_did_you_mean(first_t, limit=3, min_confidence=0.60)
+                if top_dym_t:
+                    best_t = top_dym_t[0]
+                    return cleaned, best_t["confidence"], best_t["drug_name"], best_t["drug_id"], top_dym_t
+
+        return None
+
+    # Step 1: Check seed_drug_name if provided by clause segmenter
+    if seed_drug_name:
+        res = _test_grounding(seed_drug_name)
+        if res:
+            name, conf, dym, did, dym_opts = res
+            idx = clause_text.lower().find(seed_drug_name.lower())
+            span = (idx, idx + len(seed_drug_name)) if idx >= 0 else (0, len(seed_drug_name))
+            return name, span, conf, dym, did, dym_opts
+
+    # Step 2: Extract candidate preceding any dosage pattern (with units or unitless formulation numbers)
     dosage_pattern = (
         r"\b\d+(?:\.\d+)?\s*(?:mg(?:\/ml|\/g)?|grams?|gm|g|mcg|µg|ml|l|iu|units?|%|meq|puffs?|drops?|tablets?|capsules?|sachets?|vials?)(?!\w)"
+        r"|\b(?<!\w)(?!(?:101|111|100|010|001|110|011|1111)\b)\d{2,4}\b"
     )
     dose_match = re.search(dosage_pattern, clause_text, re.IGNORECASE)
-
     if dose_match:
         lead_text = clause_text[:dose_match.start()].strip()
-        cleaned = clean_candidate_name(lead_text)
-        if cleaned and is_valid_medication_name(cleaned):
-            idx = clause_text.find(cleaned)
-            span = (idx, idx + len(cleaned)) if idx >= 0 else (0, len(cleaned))
-            return cleaned, span, 0.90
+        res = _test_grounding(lead_text)
+        if res:
+            name, conf, dym, did, dym_opts = res
+            idx = clause_text.find(lead_text)
+            span = (idx, idx + len(lead_text)) if idx >= 0 else (0, len(lead_text))
+            return name, span, conf, dym, did, dym_opts
 
-    # Look for drug name without dose
+        cleaned_lead = clean_candidate_name(lead_text)
+        if cleaned_lead and is_valid_medication_name(cleaned_lead) and len(cleaned_lead) >= 3:
+            idx = clause_text.find(cleaned_lead)
+            span = (idx, idx + len(cleaned_lead)) if idx >= 0 else (0, len(cleaned_lead))
+            return "Medicine not found", span, 0.20, None, None, []
+
+    # Step 3: Extract candidate from administration verbs
     nodose_match = re.search(
         r"(?:take|administer|give|consume|dissolve|inhale|apply|put|instill|gently\s+massage|massage|cleanse)?\s*"
         r"(?:one|two|three)?\s*(?:tablet|tab|capsule|cap|rotacap|pill|vial|sachet|puff)?\s*(?:of\s+)?"
@@ -156,22 +215,47 @@ def extract_medicine_candidate(
     )
     if nodose_match:
         raw = nodose_match.group(1).strip()
-        cleaned = clean_candidate_name(raw)
-        if cleaned and len(cleaned) >= 3 and is_valid_medication_name(cleaned):
-            idx = clause_text.find(cleaned)
-            span = (idx, idx + len(cleaned)) if idx >= 0 else (nodose_match.start(1), nodose_match.end(1))
-            return cleaned, span, 0.85
+        res = _test_grounding(raw)
+        if res:
+            name, conf, dym, did, dym_opts = res
+            idx = clause_text.find(raw)
+            span = (idx, idx + len(raw)) if idx >= 0 else (nodose_match.start(1), nodose_match.end(1))
+            return name, span, conf, dym, did, dym_opts
 
-    # Catalog dictionary search if repo available
-    if drug_repo:
-        words = re.findall(r"[A-Za-z0-9\-]{3,}", clause_text)
-        for w in words:
-            if is_valid_medication_name(w):
-                results = drug_repo.search(w)
-                if results:
-                    matched_base = results[0]["base_name"]
-                    idx = clause_text.lower().find(w.lower())
-                    span = (idx, idx + len(w)) if idx >= 0 else (0, len(w))
-                    return matched_base, span, 0.80
+    # Step 4: Multi-token n-gram search across the clause
+    words = re.findall(r"[A-Za-z0-9\-]{3,}", clause_text)
+    # Check 2-word combinations first (e.g. "parasita mall")
+    for i in range(len(words) - 1):
+        two_word = f"{words[i]} {words[i+1]}"
+        res = _test_grounding(two_word)
+        if res:
+            name, conf, dym, did, dym_opts = res
+            idx = clause_text.lower().find(two_word.lower())
+            span = (idx, idx + len(two_word)) if idx >= 0 else (0, len(two_word))
+            return name, span, conf, dym, did, dym_opts
 
-    return None, None, 0.0
+    # Check individual words
+    for w in words:
+        res = _test_grounding(w)
+        if res:
+            name, conf, dym, did, dym_opts = res
+            idx = clause_text.lower().find(w.lower())
+            span = (idx, idx + len(w)) if idx >= 0 else (0, len(w))
+            return name, span, conf, dym, did, dym_opts
+    # Fallback: if a candidate string preceded dosage/administration but could not be grounded
+    if dose_match:
+        lead_text = clause_text[:dose_match.start()].strip()
+        cleaned_lead = clean_candidate_name(lead_text)
+        if cleaned_lead and is_valid_medication_name(cleaned_lead) and len(cleaned_lead) >= 3:
+            idx = clause_text.find(cleaned_lead)
+            span = (idx, idx + len(cleaned_lead)) if idx >= 0 else (0, len(cleaned_lead))
+            return "Medicine not found", span, 0.20, None, None, []
+
+    if seed_drug_name:
+        cleaned_seed = clean_candidate_name(seed_drug_name)
+        if cleaned_seed and is_valid_medication_name(cleaned_seed) and len(cleaned_seed) >= 3:
+            idx = clause_text.lower().find(seed_drug_name.lower())
+            span = (idx, idx + len(seed_drug_name)) if idx >= 0 else (0, len(seed_drug_name))
+            return "Medicine not found", span, 0.20, None, None, []
+
+    return None, None, 0.0, None, None, []

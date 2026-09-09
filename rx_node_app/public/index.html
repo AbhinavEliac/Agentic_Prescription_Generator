@@ -96,7 +96,6 @@
                         placeholder="Waiting for speech..."
                         oninput="onTranscriptUserEdit(this.value)"
                         onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); if(this.value.trim()) processPrescription(this.value.trim(), true); }"
-                        onblur="if(this.value.trim()) processPrescription(this.value.trim(), true);"
                     ></textarea>
                 </div>
             </section>
@@ -237,6 +236,6 @@
     <!-- Notification Toast -->
     <div id="toast" class="toast hidden"></div>
 
-    <script src="app.js?v=whisper_ayush_gpu_v3"></script>
+    <script src="app.js?v=whisper_ayush_gpu_v5"></script>
 </body>
 </html>

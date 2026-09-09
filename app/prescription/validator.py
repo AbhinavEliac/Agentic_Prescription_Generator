@@ -55,19 +55,53 @@ class ClinicalValidator:
             warnings: List[str] = []
 
             # 1. Non-drug entity check
-            if not is_valid_medication_name(item.medicine_name):
+            if item.medicine_name != "Medicine not found" and not is_valid_medication_name(item.medicine_name):
                 errors.append(f"Entity '{item.medicine_name}' is not a valid pharmaceutical entity.")
 
-            # 2. Grounding check: core medicine words must appear in raw transcript or normalized transcript
-            core_words = [
-                w for w in re.findall(r"[A-Za-z0-9\-]+", item.medicine_name)
-                if len(w) >= 3 and w.lower() not in (
-                    "take", "tab", "tabs", "tablet", "capsule", "syrup",
-                    "pill", "rotacap", "none", "vial", "sachet", "one", "administer", "mg", "ml"
-                )
-            ]
-            if core_words and not any(cw.lower() in combined_text_lower for cw in core_words):
-                errors.append(f"Drug name '{item.medicine_name}' was not found in raw prescription text.")
+            # 2. Strict Database Grounding Check:
+            # If drug repository is available, the drug MUST match Drug_database (exact, normalized, or phonetic/did_you_mean)
+            is_recognized_drug = False
+            if item.medicine_name == "Medicine not found":
+                is_recognized_drug = True
+                warnings.append("Prescription medicine could not be grounded in formulary database.")
+            elif self.drug_repo:
+                first_word = item.medicine_name.split()[0].strip() if item.medicine_name else ""
+                exact = self.drug_repo.find_exact(item.medicine_name) or (self.drug_repo.find_exact(first_word) if first_word else None)
+                norm = self.drug_repo.find_normalized(item.medicine_name) or (self.drug_repo.find_normalized(first_word) if first_word else None)
+                fuzzy = self.drug_repo.find_fuzzy(item.medicine_name, min_confidence=0.68) or (self.drug_repo.find_fuzzy(first_word, min_confidence=0.68) if first_word else [])
+                if exact or norm or fuzzy or item.did_you_mean:
+                    is_recognized_drug = True
+                else:
+                    errors.append(f"Medicine '{item.medicine_name}' is not recognized in Drug_database and cannot be prescribed.")
+            else:
+                is_recognized_drug = True
+
+            # 3. Grounding check against transcript:
+            # If item has did_you_mean, it was a phonetic match / typo of spoken text.
+            # Otherwise, verify core words appear in raw or normalized text (verbatim or via phonetic compression).
+            if not item.did_you_mean:
+                core_words = [
+                    w for w in re.findall(r"[A-Za-z0-9\-]+", item.medicine_name)
+                    if len(w) >= 3 and w.lower() not in (
+                        "take", "tab", "tabs", "tablet", "capsule", "syrup",
+                        "pill", "rotacap", "none", "vial", "sachet", "one", "administer", "mg", "ml"
+                    )
+                ]
+                if core_words and not any(cw.lower() in combined_text_lower for cw in core_words):
+                    # Check phonetic backbone against raw text tokens
+                    found_phonetic = False
+                    if self.drug_repo and hasattr(self.drug_repo, "phonetic_backbone"):
+                        raw_tokens = re.findall(r"[A-Za-z]{3,}", combined_text_lower)
+                        for cw in core_words:
+                            cw_bb = self.drug_repo.phonetic_backbone(cw)
+                            for rt in raw_tokens:
+                                if self.drug_repo.phonetic_backbone(rt) == cw_bb:
+                                    found_phonetic = True
+                                    break
+                            if found_phonetic:
+                                break
+                    if not found_phonetic:
+                        errors.append(f"Drug name '{item.medicine_name}' was not found in raw prescription text.")
 
             # Ensure any dose integers inside medicine name exist in input text or normalized text
             doses = re.findall(r"\d+(?:\.\d+)?", item.medicine_name)
@@ -75,36 +109,21 @@ class ClinicalValidator:
                 if d not in raw_text and d not in raw_text_clean and d not in combined_clean:
                     errors.append(f"Dose number '{d}' in drug name '{item.medicine_name}' was not found in raw text.")
 
-            # 3. Grounding check: strength if present must be in raw text or normalized text
+            # 4. Grounding check: strength if present must be in raw text or normalized text
             if item.strength:
                 strength_nums = re.findall(r"\d+(?:\.\d+)?", item.strength)
                 for sn in strength_nums:
                     if sn not in raw_text and sn not in raw_text_clean and sn not in combined_clean:
                         errors.append(f"Strength '{item.strength}' was not found in raw prescription text.")
 
-            # 4. Anti-hallucination check: remove unsolicited commentary cues from instructions
+            # 5. Anti-hallucination check: remove unsolicited commentary cues from instructions
             sanitized_inst = item.instruction
             if sanitized_inst:
                 for cue in FORBIDDEN_COMMENTARY_CUES:
                     if cue in sanitized_inst.lower() and cue not in raw_lower:
-                        # Strip the cue
                         sanitized_inst = re.sub(re.escape(cue), "", sanitized_inst, flags=re.IGNORECASE).strip("; ")
                         warnings.append(f"Removed unsolicited commentary '{cue}'.")
             item.instruction = sanitized_inst if sanitized_inst else None
-
-            # 5. Safety Rule: Unknown medicine not found in master formulary -> NEEDS_REVIEW
-            is_recognized_drug = True
-            if self.drug_repo:
-                first_word = item.medicine_name.split()[0].strip()
-                exact = self.drug_repo.find_exact(item.medicine_name) or self.drug_repo.find_exact(first_word)
-                norm = self.drug_repo.find_normalized(item.medicine_name) or self.drug_repo.find_normalized(first_word)
-                fuzzy = self.drug_repo.find_fuzzy(first_word, min_confidence=0.82)
-                if not exact and not norm and not fuzzy:
-                    is_recognized_drug = False
-                    reason = f"Unknown medicine '{item.medicine_name}' is not recognized in the master formulary."
-                    if reason not in item.review_reasons:
-                        item.review_reasons.append(reason)
-                    warnings.append(reason)
 
             # 6. Safety Rule: Ambiguous or contradictory frequency -> NEEDS_REVIEW
             if item.frequency:

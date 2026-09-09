@@ -76,9 +76,9 @@ def test_extract_canonical_endpoint(client):
 
     items = data["prescription"]["items"]
     assert len(items) == 1
-    assert "Paracetamol" in items[0]["medicine_name"]
+    assert "paracetamol" in items[0]["medicine_name"].lower()
     assert ("650 mg" in items[0]["medicine_name"]) or (items[0]["strength"] == "650 mg")
-    assert "twice daily" in items[0]["frequency"].lower()
+    assert "twice" in items[0]["frequency"].lower() or "1-0-1" in items[0]["frequency"]
     assert "5 days" in items[0]["duration"].lower()
 
 

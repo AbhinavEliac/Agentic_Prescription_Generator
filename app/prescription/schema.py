@@ -168,6 +168,9 @@ class PrescriptionItem(BaseModel):
     
     # Formulary relational links
     available_routes: List[str] = Field(default_factory=list, description="Permissible anatomical routes mapped in formulary")
+    available_drugs: List[Dict[str, Any]] = Field(default_factory=list, description="Dropdown data of candidate formulary medicines with matching dose")
+    did_you_mean: Optional[str] = Field(default=None, description="Phonetic recommendation if drug was misheard/misspelled")
+    did_you_mean_options: List[Dict[str, Any]] = Field(default_factory=list, description="Top 3 Did-You-Mean candidates with full metadata")
     validation_warnings: List[str] = Field(default_factory=list, description="Non-blocking clinical warnings or ambiguities")
     review_reasons: List[str] = Field(default_factory=list, description="Reasons flagging this item for review")
 
@@ -308,11 +311,17 @@ class DeterministicExtractionCandidate(BaseModel):
     formulation_strength: Optional[str] = None
     order_strength: Optional[str] = None
     strength: Optional[str] = None
+    dose: Optional[str] = None
+    dose_unit: Optional[str] = None
     frequency: Optional[str] = None
     duration: Optional[str] = None
     route: Any = ClinicalRoute.UNKNOWN
     instruction: Optional[str] = None
     additional_instruction: Optional[str] = None
+    available_drugs: List[Dict[str, Any]] = Field(default_factory=list)
+    did_you_mean: Optional[str] = None
+    did_you_mean_options: List[Dict[str, Any]] = Field(default_factory=list)
+    available_routes: List[str] = Field(default_factory=list)
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     matched_by_soundex: bool = False
     evidence_tokens: Dict[str, str] = Field(default_factory=dict)
@@ -363,11 +372,17 @@ class ReconciliationItem(BaseModel):
     medicine: str = ""
     medicine_name: Optional[str] = None
     strength: Optional[str] = None
+    dose: Optional[str] = None
+    dose_unit: Optional[str] = None
     frequency: Optional[str] = None
     duration: Optional[str] = None
     route: Any = "oral"
     instruction: Optional[str] = None
     additional_instruction: Optional[str] = None
+    available_drugs: List[Dict[str, Any]] = Field(default_factory=list)
+    did_you_mean: Optional[str] = None
+    did_you_mean_options: List[Dict[str, Any]] = Field(default_factory=list)
+    available_routes: List[str] = Field(default_factory=list)
     status: ExtractionStatus = ExtractionStatus.NORMALIZED
     confidence: float = 0.90
     conflicts: List[str] = Field(default_factory=list)

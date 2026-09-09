@@ -221,10 +221,134 @@ class TestStreamingTranscriber:
         state = streamer.feed_chunk(chunk)
         assert "is_speech" in state
         assert "interim_text" in state
+        assert "full_transcript" in state
 
         final_res = streamer.finalize()
         assert isinstance(final_res, TranscriptionResult)
         assert final_res.text != ""
+
+    def test_cumulative_utterance_retention(self, mock_engine: MockSTTEngine):
+        """Verifies that earlier words are not dropped when multiple chunks arrive."""
+        streamer = StreamingTranscriber(
+            engine=mock_engine,
+            sample_rate=16000,
+            step_duration_s=0.1,
+        )
+        # Feed successive chunks of audio
+        state = None
+        for _ in range(5):
+            chunk = (0.4 * np.ones(4096, dtype=np.float32))
+            state = streamer.feed_chunk(chunk)
+        assert state is not None
+        assert state["text"] != ""
+        assert "Paracetamol" in state["text"]
+
+
+    def test_continuous_silence_produces_no_transcription_calls(self):
+        """Verifies that pure silence never triggers Whisper inference and finalize yields empty text."""
+        class CallCountingMockEngine(MockSTTEngine):
+            def __init__(self):
+                super().__init__(name="counting_mock", default_transcript="Hallucinated text")
+                self.call_count = 0
+
+            def transcribe(self, audio, **kwargs):
+                self.call_count += 1
+                return super().transcribe(audio, **kwargs)
+
+        counting_engine = CallCountingMockEngine()
+        streamer = StreamingTranscriber(
+            engine=counting_engine,
+            sample_rate=16000,
+            step_duration_s=0.1,
+        )
+
+        # Feed 10 consecutive chunks of pure silence (each 0.1s = 1600 samples)
+        for _ in range(10):
+            silence_chunk = np.zeros(1600, dtype=np.float32)
+            state = streamer.feed_chunk(silence_chunk)
+            assert not state["is_speech"]
+            assert not state["decoded"]
+            assert state["text"] == ""
+
+        # Inference should NOT have been called even once during silence
+        assert counting_engine.call_count == 0
+
+        # Finalizing on pure silence should return empty text and avoid calling transcribe
+        final_res = streamer.finalize()
+        assert final_res.text == ""
+        assert counting_engine.call_count == 0
+
+    def test_speech_followed_by_pause_commits_and_stops_decoding(self):
+        """Verifies that speech pauses commit boundary cleanly and silence does not keep decoding."""
+        class CallCountingMockEngine(MockSTTEngine):
+            def __init__(self):
+                super().__init__(name="counting_mock", default_transcript="Tab Paracetamol 650mg")
+                self.call_count = 0
+
+            def transcribe(self, audio, **kwargs):
+                self.call_count += 1
+                return super().transcribe(audio, **kwargs)
+
+        counting_engine = CallCountingMockEngine()
+        streamer = StreamingTranscriber(
+            engine=counting_engine,
+            sample_rate=16000,
+            step_duration_s=0.1,
+        )
+
+        # Feed 3 speech chunks (0.3s total)
+        t = np.linspace(0, 0.1, 1600, endpoint=False)
+        speech_pcm = (0.5 * np.sin(2 * np.pi * 400 * t)).astype(np.float32)
+        for _ in range(3):
+            streamer.feed_chunk(speech_pcm)
+
+        calls_after_speech = counting_engine.call_count
+
+        # Now feed 6 chunks of pure silence (0.6s of pause to cross 350ms boundary)
+        silence_pcm = np.zeros(1600, dtype=np.float32)
+        boundary_seen = False
+        for _ in range(6):
+            state = streamer.feed_chunk(silence_pcm)
+            if state.get("boundary"):
+                boundary_seen = True
+
+        assert boundary_seen, "Natural speech pause boundary should be committed"
+        assert "Paracetamol" in streamer.confirmed_text
+
+        # Feed another 5 chunks of silence after boundary
+        calls_at_boundary = counting_engine.call_count
+        for _ in range(5):
+            state = streamer.feed_chunk(silence_pcm)
+            assert not state["decoded"], "Subsequent silence must NOT trigger Whisper decode"
+
+        assert counting_engine.call_count == calls_at_boundary, "Whisper must not be called during idle silence"
+
+    def test_hallucination_cleaning(self):
+        """Verifies clean_hallucinations removes typical Whisper silence and subtitle hallucinations."""
+        from app.stt.adapters.ctranslate2_engine import clean_hallucinations
+
+        assert clean_hallucinations("Thank you.") == ""
+        assert clean_hallucinations("Thank you for watching!") == ""
+        assert clean_hallucinations("Please subscribe to my channel.") == ""
+        assert clean_hallucinations("Subtitles by Amara.org") == ""
+        assert clean_hallucinations("...") == ""
+        assert clean_hallucinations(" ,,, ") == ""
+        assert clean_hallucinations("Tab Paracetamol 500mg Thank you.") == "Tab Paracetamol 500mg"
+        assert clean_hallucinations("Capsule Amoxicillin 500mg") == "Capsule Amoxicillin 500mg"
+
+
+    def test_vad_process_samples_slicing(self):
+        """Verifies that 4096-sample chunks are broken into 30ms frames accurately."""
+        vad = VADDetector(sample_rate=16000)
+        # 4096 samples of silence
+        silence_chunk = np.zeros(4096, dtype=np.float32)
+        assert not vad.process_samples(silence_chunk)
+
+        # 4096 samples of tone (enough to cross min_speech_frames of 4*30ms=120ms)
+        t = np.linspace(0, 4096 / 16000, 4096, endpoint=False)
+        tone_chunk = (0.5 * np.sin(2 * np.pi * 500 * t)).astype(np.float32)
+        assert vad.process_samples(tone_chunk)
+
 
 
 class TestRealCT2WhisperAyush:

@@ -122,10 +122,16 @@ class PrescriptionPipeline:
             blocks.append({
                 "Drug_name": item.medicine_name,
                 "strength": item.strength or "NONE",
+                "dose": item.dose,
+                "dose_unit": item.dose_unit,
                 "frequency": item.frequency or "NONE",
                 "duration": item.duration or "NONE",
                 "route": item.route or "oral",
                 "instruction": item.instruction or "NONE",
                 "additional_instruction": item.additional_instruction or "NONE",
+                "available_drugs": item.available_drugs,
+                "did_you_mean": item.did_you_mean,
+                "did_you_mean_options": item.did_you_mean_options,
+                "available_routes": item.available_routes,
             })
         return blocks

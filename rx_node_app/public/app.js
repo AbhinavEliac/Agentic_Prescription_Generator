@@ -31,14 +31,11 @@ const clinicalDb = {
 
 const state = {
     isRecording: false,
-    mediaRecorder: null,
     mediaStream: null,
-    audioChunks: [],
     audioContext: null,
     audioProcessor: null,
     ws: null,
     wsSessionStarted: false,
-    speechRecognizer: null,
     activeAsrEngine: null,
     previousSessionsText: '',
     speechFinalText: '',
@@ -49,6 +46,7 @@ const state = {
     pendingDidYouMean: null,
     manualSelectedDrug: null,
     lastExtractedText: '',
+    lastExtractedNormalizedText: '',
     lastVoiceTimestamp: 0,
     isSpeakingRms: false,
     wasSpeakingWs: false
@@ -127,9 +125,15 @@ function getRoutesForDrug(drugId) {
  * It strictly does NOT parse medicine names, dosages, or clinical grammar in JavaScript.
  * All clinical interpretation is performed canonically by the FastAPI PrescriptionPipeline.
  */
-function isPrescriptionSentenceComplete(transcriptText) {
+function isPrescriptionSentenceComplete(transcriptText, allowMidRecording = false) {
     if (!transcriptText || !transcriptText.trim()) return false;
     const clean = transcriptText.trim();
+
+    // Must contain meaningful clinical alphanumeric text (filter out lone dots/punctuation)
+    if (!/[a-zA-Z0-9]{2,}/.test(clean)) return false;
+
+    // While actively recording speech, only trigger if explicit speech pause or boundary allows it
+    if (!allowMidRecording && state.isRecording) return false;
 
     // 1. Explicit sentence termination punctuation indicates completion
     if (/[.!?\n]$/.test(clean)) return true;
@@ -144,12 +148,7 @@ function isPrescriptionSentenceComplete(transcriptText) {
         return false;
     }
 
-    // 4. While actively recording speech, do NOT prematurely extract if interim speech is ongoing
-    if (state.isRecording && state.speechInterimText && state.speechInterimText.trim().length > 0) {
-        return false;
-    }
-
-    // 5. If conditional clause opened ("if / in case of"), require enough context words before triggering
+    // 4. If conditional clause opened ("if / in case of"), require enough context words before triggering
     const condMatch = clean.match(/\b(?:if|in\s+case\s+(?:of\s+)?|whenever|when)\s+([^,;\n\.]+)$/i);
     if (condMatch && condMatch[1].trim().split(/\s+/).length < 3) {
         return false;
@@ -158,50 +157,35 @@ function isPrescriptionSentenceComplete(transcriptText) {
     return true;
 }
 
-/**
- * ⚡ The moment a pause in speech is detected by any sensor (VAD, Web Speech onspeechend, RMS volume drop, or silence debounce):
- * Immediately commits any spoken interim tokens, checks sentence completeness, and processes the transcript!
- */
-function onSpeechPauseDetected(source = 'speech-pause') {
-    const textarea = document.getElementById('live-transcription-input');
-    if (!textarea) return;
 
-    const currentVal = (textarea.value || '').trim();
-    if (!currentVal) return;
-
-    // Prevent redundant repeated extractions if text has not changed since last extraction
-    if (currentVal === state.lastExtractedText) return;
-
-    // Check sentence completeness so we ONLY start recording after the pause when the sentence finishes
-    if (isPrescriptionSentenceComplete(currentVal)) {
-        clearTimeout(state.streamingExtractTimer);
-        console.log(`[ASR] ⚡ Speech pause detected via '${source}' after sentence finished. Processing transcript immediately!`);
-        processPrescription(currentVal, true);
-    }
-}
 
 /**
  * Updates the LIVE TRANSCRIPTION textarea in real-time as speech happens.
- * Words stream in live, and the moment a speech pause occurs when sentence finishes, it triggers processing!
  */
 function updateLiveTranscriptionText(text, fromWebSpeech = false) {
     if (!text) return;
+    const clean = text.trim();
+    if (!clean || !anyAlphanumeric(clean)) return;
+
     const textarea = document.getElementById('live-transcription-input');
     if (!textarea) return;
 
-    textarea.value = text;
+    textarea.value = clean;
     textarea.scrollTop = textarea.scrollHeight;
-
-    // Reset extraction timer on every new speech token
-    clearTimeout(state.streamingExtractTimer);
-
-    // After the sentence finishes, trigger extraction upon a 750ms natural conversational pause
-    if (isPrescriptionSentenceComplete(text)) {
-        state.streamingExtractTimer = setTimeout(() => {
-            onSpeechPauseDetected('speech-token-pause');
-        }, 750); // 750ms natural end-of-sentence pause (< 1s sub-second)
-    }
 }
+
+function anyAlphanumeric(str) {
+    return /[a-zA-Z0-9]/.test(str);
+}
+
+/**
+ * Normalizes text for comparison (strips punctuation, extra whitespace, casing)
+ */
+function normalizeRxText(t) {
+    if (!t) return '';
+    return t.toLowerCase().replace(/[^a-z0-9]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 
 /**
  * Spawns a robust, continuous Web Speech API instance.
@@ -215,6 +199,43 @@ function startNativeSpeechRecognition() {
 }
 
 /**
+ * Downsamples audio from any hardware sample rate (e.g., 48000Hz, 44100Hz)
+ * to standard 16000Hz 16-bit mono PCM expected by Whisper Ayush.
+ */
+function downsampleToPcm16(float32Array, inputRate, outputRate = 16000) {
+    if (!float32Array || float32Array.length === 0) return new Int16Array(0);
+    if (inputRate === outputRate) {
+        const out = new Int16Array(float32Array.length);
+        for (let i = 0; i < float32Array.length; i++) {
+            const s = Math.max(-1, Math.min(1, float32Array[i]));
+            out[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        }
+        return out;
+    }
+
+    const sampleRateRatio = inputRate / outputRate;
+    const newLength = Math.round(float32Array.length / sampleRateRatio);
+    const result = new Int16Array(newLength);
+    let offsetResult = 0;
+    let offsetBuffer = 0;
+
+    while (offsetResult < newLength) {
+        const nextOffsetBuffer = Math.round((offsetResult + 1) * sampleRateRatio);
+        let accum = 0, count = 0;
+        for (let i = offsetBuffer; i < nextOffsetBuffer && i < float32Array.length; i++) {
+            accum += float32Array[i];
+            count++;
+        }
+        const sample = count > 0 ? accum / count : float32Array[offsetBuffer] || 0;
+        const clamped = Math.max(-1, Math.min(1, sample));
+        result[offsetResult] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7FFF;
+        offsetResult++;
+        offsetBuffer = nextOffsetBuffer;
+    }
+    return result;
+}
+
+/**
  * 🎙 Start Recording Flow
  * Enforces Whisper Ayush ONLY as requested by the user.
  * Streams Web Audio PCM16 directly to Python backend Whisper Ayush over WebSocket.
@@ -222,7 +243,6 @@ function startNativeSpeechRecognition() {
 async function startRecording() {
     try {
         state.isRecording = true;
-        state.audioChunks = [];
         state.previousSessionsText = '';
         state.speechFinalText = '';
         state.speechInterimText = '';
@@ -253,7 +273,7 @@ async function startRecording() {
         showToast('🎙️ Live listening (Whisper Ayush) active — speak prescription now...');
     } catch (err) {
         console.error('[Record] Mic access error:', err);
-        showToast('Microphone error: ' + err.message);
+        showToast('Microphone error: ' + (err.message || 'Access denied'));
         stopRecording();
     }
 }
@@ -262,122 +282,159 @@ async function startRecording() {
  * Whisper Ayush WebSocket Streaming Engine
  */
 async function startWebSocketStreaming() {
+    state.wsSessionStarted = true;
+
+    // 1. Acquire microphone with resilient fallback for diverse Windows audio drivers
+    let stream = null;
     try {
-        state.wsSessionStarted = true;
-        const stream = await navigator.mediaDevices.getUserMedia({
-            audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true }
+        stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                channelCount: 1,
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+            }
         });
-        state.mediaStream = stream;
-
-        state.mediaRecorder = new MediaRecorder(stream);
-        state.mediaRecorder.ondataavailable = (e) => {
-            if (e.data && e.data.size > 0) state.audioChunks.push(e.data);
-        };
-        state.mediaRecorder.start(250);
-
-        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        if (!AudioContextClass) return;
-
-        state.audioContext = new AudioContextClass({ sampleRate: 16000 });
-        const source = state.audioContext.createMediaStreamSource(stream);
-
-        // 80Hz Biquad High-Pass Filter: strips AC mains hum (50/60Hz) and desk/fan rumble
-        const highPassFilter = state.audioContext.createBiquadFilter();
-        highPassFilter.type = 'highpass';
-        highPassFilter.frequency.value = 80;
-
-        const processor = state.audioContext.createScriptProcessor(4096, 1, 1);
-        state.audioProcessor = processor;
-
-        const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        let wsUrl = `${wsProto}//${window.location.hostname}:8080/ws/transcribe?sample_rate=16000&stt_model=whisper_ayush`;
-        try {
-            const cfgRes = await fetch('/api/streaming-config');
-            if (cfgRes.ok) {
-                const cfg = await cfgRes.json();
-                if (cfg.ws_url) {
-                    if (cfg.ws_url.startsWith('/')) {
-                        wsUrl = `${wsProto}//${window.location.host}${cfg.ws_url}?sample_rate=16000&stt_model=whisper_ayush`;
-                    } else {
-                        let target = cfg.ws_url;
-                        if (window.location.protocol === 'https:' && target.startsWith('ws://')) {
-                            target = target.replace('ws://', 'wss://');
-                        }
-                        wsUrl = `${target}?sample_rate=16000&stt_model=whisper_ayush`;
-                    }
-                }
-            }
-        } catch (e) {}
-
-        state.ws = new WebSocket(wsUrl);
-        state.ws.binaryType = 'arraybuffer';
-
-        state.ws.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-
-                // Handle finalized result from Whisper Ayush
-                if (data.type === 'final') {
-                    const finalText = (data.punctuated_text || data.raw_text || data.text || '').trim();
-                    if (finalText) {
-                        const textarea = document.getElementById('live-transcription-input');
-                        if (textarea) textarea.value = finalText;
-                        state.speechFinalText = finalText;
-                        const latElem = document.getElementById('latency-telemetry-text');
-                        if (latElem && data.final_latency_ms) {
-                            latElem.textContent = `⚡ Whisper Ayush: ${(data.final_latency_ms / 1000).toFixed(2)}s | ${data.duration || 0}s audio`;
-                        }
-                        showToast('Prescription transcribed by Whisper Ayush. Extracting medications...');
-                        processPrescription(finalText, true);
-                    }
-                    const recText = document.getElementById('record-status-text');
-                    if (recText) recText.textContent = 'Idle';
-                    const dot = document.getElementById('record-status-dot');
-                    if (dot) dot.className = 'status-dot dot-idle';
-                    return;
-                }
-
-                const whisperText = (data.text || data.full_transcript || data.partial_text || data.punctuated_text || data.raw_text || '').trim();
-                if (whisperText) {
-                    updateLiveTranscriptionText(whisperText, false);
-                    const latElem = document.getElementById('latency-telemetry-text');
-                    if (latElem && data.latency_ms > 0) {
-                        latElem.textContent = `⚡ Live Whisper Ayush: ${data.latency_ms}ms | ${data.duration || 0}s audio`;
-                    }
-                }
-                const isSpeaking = data.is_speech !== undefined ? data.is_speech : data.is_speaking;
-                if (isSpeaking !== undefined) {
-                    const currentVadDot = document.getElementById('vad-status-dot');
-                    if (currentVadDot) {
-                        currentVadDot.className = isSpeaking ? 'status-dot dot-green' : 'status-dot dot-gray';
-                    }
-                    if (!isSpeaking && state.wasSpeakingWs) {
-                        onSpeechPauseDetected('backend-vad-pause');
-                    }
-                    state.wasSpeakingWs = isSpeaking;
-                }
-            } catch (e) {}
-        };
-
-        processor.onaudioprocess = (e) => {
-            if (!state.isRecording) return;
-            const inputData = e.inputBuffer.getChannelData(0);
-            const pcm16 = new Int16Array(inputData.length);
-            for (let i = 0; i < inputData.length; i++) {
-                const s = Math.max(-1, Math.min(1, inputData[i]));
-                pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-            }
-            if (state.ws && state.ws.readyState === WebSocket.OPEN) {
-                state.ws.send(pcm16.buffer);
-            }
-        };
-
-        source.connect(highPassFilter);
-        highPassFilter.connect(processor);
-        processor.connect(state.audioContext.destination);
-    } catch (err) {
-        console.warn('[WS-Streaming] Notice:', err.message);
+    } catch (conEx) {
+        console.warn('[WS-Streaming] Constrained mic acquisition failed, trying standard audio:', conEx.message);
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     }
+    state.mediaStream = stream;
+
+    // 2. Initialize Web Audio Context at native hardware sample rate
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) throw new Error('Web Audio API is not supported in this browser.');
+
+    state.audioContext = new AudioContextClass();
+    if (state.audioContext.state === 'suspended') {
+        await state.audioContext.resume();
+    }
+    const nativeSampleRate = state.audioContext.sampleRate || 44100;
+    console.log(`[Audio] Hardware sample rate: ${nativeSampleRate}Hz. Resampling live PCM16 to 16000Hz.`);
+
+    const source = state.audioContext.createMediaStreamSource(stream);
+
+    // 80Hz Biquad High-Pass Filter: strips AC mains hum (50/60Hz) and desk/fan rumble
+    const highPassFilter = state.audioContext.createBiquadFilter();
+    highPassFilter.type = 'highpass';
+    highPassFilter.frequency.value = 80;
+
+    // ScriptProcessor (buffer size 4096)
+    const processor = state.audioContext.createScriptProcessor(4096, 1, 1);
+    state.audioProcessor = processor;
+
+    // 4. Determine WebSocket URL (query streaming-config or use location host)
+    const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    let wsUrl = `${wsProto}//${window.location.hostname}:8080/ws/transcribe?sample_rate=16000&stt_model=whisper_ayush`;
+    try {
+        const cfgRes = await fetch('/api/streaming-config');
+        if (cfgRes.ok) {
+            const cfg = await cfgRes.json();
+            if (cfg.ws_url) {
+                if (cfg.ws_url.startsWith('/')) {
+                    wsUrl = `${wsProto}//${window.location.host}${cfg.ws_url}?sample_rate=16000&stt_model=whisper_ayush`;
+                } else {
+                    let target = cfg.ws_url;
+                    if (window.location.protocol === 'https:' && target.startsWith('ws://')) {
+                        target = target.replace('ws://', 'wss://');
+                    }
+                    wsUrl = `${target}?sample_rate=16000&stt_model=whisper_ayush`;
+                }
+            }
+        }
+    } catch (e) {}
+
+    console.log('[WS] Connecting to WebSocket at:', wsUrl);
+    state.ws = new WebSocket(wsUrl);
+    state.ws.binaryType = 'arraybuffer';
+
+    state.ws.onopen = () => {
+        console.log('[WS] Streaming WebSocket connected to', wsUrl);
+    };
+    state.ws.onerror = (e) => {
+        console.warn('[WS] WebSocket notice:', e);
+    };
+
+    state.ws.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+
+            // Handle finalized result from Whisper Ayush
+            if (data.type === 'final') {
+                const finalText = (data.punctuated_text || data.raw_text || data.text || '').trim();
+                if (finalText && anyAlphanumeric(finalText)) {
+                    const textarea = document.getElementById('live-transcription-input');
+                    if (textarea) textarea.value = finalText;
+                    state.speechFinalText = finalText;
+                    const latElem = document.getElementById('latency-telemetry-text');
+                    if (latElem && data.final_latency_ms) {
+                        latElem.textContent = `⚡ Whisper Ayush: ${(data.final_latency_ms / 1000).toFixed(2)}s | ${data.duration || 0}s audio`;
+                    }
+                    const norm = normalizeRxText(finalText);
+                    // SINGLE WORKFLOW: Only run extraction if this text has NOT already been extracted at the pause boundary!
+                    if (norm && norm !== state.lastExtractedNormalizedText) {
+                        console.log('[ASR] Finalize contains unextracted speech. Extracting:', finalText);
+                        processPrescription(finalText, false);
+                    }
+                }
+                const recText = document.getElementById('record-status-text');
+                if (recText) recText.textContent = 'Idle';
+                const dot = document.getElementById('record-status-dot');
+                if (dot) dot.className = 'status-dot dot-idle';
+                return;
+            }
+
+            // Handle natural sentence boundary commit from backend VAD (pause at the end of each sentence)
+            if (data.type === 'boundary' || data.boundary) {
+                const boundaryText = (data.text || data.full_transcript || '').trim();
+                if (boundaryText && anyAlphanumeric(boundaryText)) {
+                    updateLiveTranscriptionText(boundaryText, false);
+                    const norm = normalizeRxText(boundaryText);
+                    if (norm && norm !== state.lastExtractedNormalizedText && isPrescriptionSentenceComplete(boundaryText, true)) {
+                        console.log('[ASR] ⚡ Natural sentence boundary committed at pause:', boundaryText);
+                        processPrescription(boundaryText, true);
+                    }
+                }
+                return;
+            }
+
+            const whisperText = (data.text || data.full_transcript || data.partial_text || data.punctuated_text || data.raw_text || '').trim();
+            if (whisperText && anyAlphanumeric(whisperText)) {
+                updateLiveTranscriptionText(whisperText, false);
+                const latElem = document.getElementById('latency-telemetry-text');
+                if (latElem && data.latency_ms > 0) {
+                    latElem.textContent = `⚡ Live Whisper Ayush: ${data.latency_ms}ms | ${data.duration || 0}s audio`;
+                }
+            }
+            const isSpeaking = data.is_speech !== undefined ? data.is_speech : data.is_speaking;
+            if (isSpeaking !== undefined) {
+                const currentVadDot = document.getElementById('vad-status-dot');
+                if (currentVadDot) {
+                    currentVadDot.className = isSpeaking ? 'status-dot dot-green' : 'status-dot dot-gray';
+                }
+                state.wasSpeakingWs = isSpeaking;
+            }
+
+        } catch (e) {}
+    };
+
+    processor.onaudioprocess = (e) => {
+        if (!state.isRecording) return;
+        const inputData = e.inputBuffer.getChannelData(0);
+        // Downsample input data from native hardware sample rate to 16000Hz PCM16
+        const pcm16 = downsampleToPcm16(inputData, nativeSampleRate, 16000);
+        if (pcm16 && pcm16.length > 0 && state.ws && state.ws.readyState === WebSocket.OPEN) {
+            state.ws.send(pcm16.buffer);
+        }
+    };
+
+    source.connect(highPassFilter);
+    highPassFilter.connect(processor);
+    // Connect processor through a zero-gain node to destination to prevent speaker feedback while keeping processor active
+    const muteGain = state.audioContext.createGain();
+    muteGain.gain.value = 0.0;
+    processor.connect(muteGain);
+    muteGain.connect(state.audioContext.destination);
 }
 
 /**
@@ -386,23 +443,15 @@ async function startWebSocketStreaming() {
 function stopRecording() {
     state.isRecording = false;
 
-    // 1. Stop SpeechRecognition if any
-    if (state.speechRecognizer) {
-        try { state.speechRecognizer.stop(); } catch (e) {}
-        state.speechRecognizer = null;
-    }
-
-    // 2. Update UI to Transcribing state while waiting for Whisper Ayush finalization
+    // 1. Update UI controls
     document.getElementById('btn-start-record').disabled = false;
     document.getElementById('btn-stop-record').disabled = true;
     const dot = document.getElementById('record-status-dot');
-    if (dot) dot.className = 'status-dot dot-recording';
     const recText = document.getElementById('record-status-text');
-    if (recText) recText.textContent = 'Transcribing with Whisper Ayush...';
     const vadDot = document.getElementById('vad-status-dot');
     if (vadDot) vadDot.className = 'status-dot dot-gray';
 
-    // 3. Stop AudioContext & Processor
+    // 2. Stop AudioContext & Processor immediately so mic is freed
     if (state.audioProcessor) {
         try { state.audioProcessor.disconnect(); } catch (e) {}
         state.audioProcessor = null;
@@ -412,26 +461,37 @@ function stopRecording() {
         state.audioContext = null;
     }
 
-    // 4. Stop MediaStream tracks
+    // 3. Stop MediaStream tracks
     if (state.mediaStream) {
         state.mediaStream.getTracks().forEach(t => t.stop());
         state.mediaStream = null;
     }
 
-    // 5. Stop MediaRecorder
-    if (state.mediaRecorder && state.mediaRecorder.state !== 'inactive') {
-        state.mediaRecorder.stop();
+    // SINGLE WORKFLOW: Check if the current spoken sentence was ALREADY extracted at the pause
+    const currentInputText = (document.getElementById('live-transcription-input')?.value || '').trim();
+    const isAlreadyExtracted = currentInputText && normalizeRxText(currentInputText) === state.lastExtractedNormalizedText;
+
+    if (isAlreadyExtracted) {
+        // Sentence was already extracted at the natural pause: transition directly to Idle without re-running workflow
+        if (recText) recText.textContent = 'Idle';
+        if (dot) dot.className = 'status-dot dot-idle';
+        if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+            try { state.ws.close(); } catch (e) {}
+            state.ws = null;
+        }
+        showToast('Dictation completed. Prescription extracted.');
+        return;
     }
 
-    clearTimeout(state.streamingExtractTimer);
+    // If there was speech actively ongoing that was cut off by Stop before a pause:
+    if (dot) dot.className = 'status-dot dot-recording';
+    if (recText) recText.textContent = 'Finalizing with Whisper Ayush...';
 
-    // 6. Request clean finalization from Whisper Ayush WebSocket
     if (state.ws && state.ws.readyState === WebSocket.OPEN) {
         showToast('Finalizing transcript with Whisper Ayush...');
         state.ws.send(JSON.stringify({ action: 'finalize' }));
-        // Safe timeout in case WebSocket connection is interrupted
         setTimeout(() => {
-            if (recText && recText.textContent.includes('Transcribing')) {
+            if (recText && recText.textContent.includes('Finalizing')) {
                 recText.textContent = 'Idle';
                 if (dot) dot.className = 'status-dot dot-idle';
             }
@@ -439,52 +499,10 @@ function stopRecording() {
                 try { state.ws.close(); } catch (e) {}
                 state.ws = null;
             }
-        }, 6000);
-    } else if (!state.wsSessionStarted && state.audioChunks.length > 0) {
-        // Fallback REST endpoint ONLY if WebSocket was never initialized
-        const audioBlob = new Blob(state.audioChunks, { type: 'audio/wav' });
-        transcribeRecordedAudio(audioBlob);
+        }, 3000);
     } else {
         if (recText) recText.textContent = 'Idle';
         if (dot) dot.className = 'status-dot dot-idle';
-        if (!state.wsSessionStarted) {
-            showToast('No speech detected.');
-        }
-    }
-}
-
-/**
- * Fallback Transcribe Audio via backend STT (used if live engines did not produce text)
- */
-async function transcribeRecordedAudio(audioBlob) {
-    const textarea = document.getElementById('live-transcription-input');
-    if (textarea && !textarea.value.trim()) {
-        textarea.placeholder = 'Transcribing with STT engine...';
-    }
-
-    try {
-        const formData = new FormData();
-        formData.append('file', audioBlob, 'recording.wav');
-        formData.append('stt_model', 'whisper_ayush');
-
-        const res = await fetch('/api/transcribe', {
-            method: 'POST',
-            body: formData
-        });
-
-        const data = await res.json();
-        if (data.success && data.transcript) {
-            textarea.value = data.transcript;
-            showToast('Speech transcribed. Extracting medications...');
-            processPrescription(data.transcript);
-        } else {
-            textarea.placeholder = 'Waiting for speech...';
-            showToast('No speech recognized.');
-        }
-    } catch (err) {
-        console.error('[Transcribe] Error:', err);
-        if (textarea) textarea.placeholder = 'Waiting for speech...';
-        showToast('Transcription error: ' + err.message);
     }
 }
 
@@ -510,6 +528,7 @@ function clearAll() {
     state.extractedRecords = [];
     state.pendingDidYouMean = null;
     state.lastExtractedText = '';
+    state.lastExtractedNormalizedText = '';
     hideDidYouMeanBanner();
     renderTable([]);
     showToast('Prescription cleared.');
@@ -539,7 +558,12 @@ function onTranscriptUserEdit(text) {
  */
 async function processPrescription(text, forceExtract = false) {
     const cleanText = text.trim();
-    if (!cleanText || (!forceExtract && cleanText === state.lastExtractedText)) return;
+    const norm = normalizeRxText(cleanText);
+    if (!cleanText || !norm) return;
+
+    // SINGLE PIPELINE DEDUPLICATION GUARD:
+    // If normalized text matches already extracted content, skip completely to prevent duplicate runs
+    if (!forceExtract && norm === state.lastExtractedNormalizedText) return;
 
     // Guard: Never prematurely extract incomplete fragments while actively recording unless forced
     if (!forceExtract && state.isRecording && !isPrescriptionSentenceComplete(cleanText)) {
@@ -547,6 +571,7 @@ async function processPrescription(text, forceExtract = false) {
     }
 
     state.lastExtractedText = cleanText;
+    state.lastExtractedNormalizedText = norm;
     const t0 = performance.now();
 
     try {
@@ -563,10 +588,18 @@ async function processPrescription(text, forceExtract = false) {
             if (data.prescription && Array.isArray(data.prescription.items) && data.prescription.items.length > 0) {
                 mappedRecords = data.prescription.items.map(item => {
                     const instParts = [item.instruction, item.additional_instruction].filter(Boolean);
+                    const doseVal = (item.dose !== undefined && item.dose !== null) ? String(item.dose) : '';
+                    const unitVal = (item.dose_unit !== undefined && item.dose_unit !== null) ? String(item.dose_unit) : (doseVal ? 'mg' : '');
+                    let dymOpts = [];
+                    if (Array.isArray(item.did_you_mean_options) && item.did_you_mean_options.length > 0) {
+                        dymOpts = item.did_you_mean_options.slice(0, 3);
+                    } else if (item.did_you_mean) {
+                        dymOpts = [{ drug_name: item.did_you_mean, base_name: item.did_you_mean }];
+                    }
                     return {
                         Drug_name: item.medicine_name || item.medicine || '',
-                        dose: item.dose || '',
-                        dose_unit: item.dose_unit || '',
+                        dose: doseVal,
+                        dose_unit: unitVal,
                         schedule: item.frequency || '',
                         days: item.duration || '',
                         route: (item.route || 'ORAL').toUpperCase(),
@@ -574,29 +607,47 @@ async function processPrescription(text, forceExtract = false) {
                         available_routes: item.available_routes && item.available_routes.length > 0
                             ? item.available_routes
                             : ['ORAL', 'RT', 'PEG', 'IV', 'IM', 'TOPICAL', 'INHALATION', 'OPHTHALMIC', 'NASAL'],
+                        available_drugs: item.available_drugs || [],
+                        did_you_mean: item.did_you_mean || (dymOpts[0] ? (dymOpts[0].drug_name || dymOpts[0].base_name) : null),
+                        did_you_mean_options: dymOpts,
                         confidence: item.confidence,
                         status: item.status
                     };
                 });
             } else if (Array.isArray(data.parsed_records)) {
                 mappedRecords = data.parsed_records.map(r => {
-                    const doseMatch = (r.strength && r.strength !== 'NONE') ? r.strength.match(/^(\d+(?:\.\d+)?)\s*(.*)$/) : null;
                     const instParts = [r.instruction, r.additional_instruction].filter(i => i && i !== 'NONE');
+                    const doseVal = (r.dose !== undefined && r.dose !== null) ? String(r.dose) : '';
+                    const unitVal = (r.dose_unit !== undefined && r.dose_unit !== null) ? String(r.dose_unit) : (doseVal ? 'mg' : '');
+                    let dymOpts = [];
+                    if (Array.isArray(r.did_you_mean_options) && r.did_you_mean_options.length > 0) {
+                        dymOpts = r.did_you_mean_options.slice(0, 3);
+                    } else if (r.did_you_mean) {
+                        dymOpts = [{ drug_name: r.did_you_mean, base_name: r.did_you_mean }];
+                    }
                     return {
                         Drug_name: r.Drug_name || '',
-                        dose: doseMatch ? doseMatch[1] : (r.dose || ''),
-                        dose_unit: doseMatch ? (doseMatch[2] || 'mg') : (r.dose_unit || ''),
+                        dose: doseVal,
+                        dose_unit: unitVal,
                         schedule: r.frequency && r.frequency !== 'NONE' ? r.frequency : '',
                         days: r.duration && r.duration !== 'NONE' ? r.duration : '',
                         route: (r.route && r.route !== 'NONE' ? r.route : 'ORAL').toUpperCase(),
                         instruction: instParts.join('; '),
-                        available_routes: ['ORAL', 'RT', 'PEG', 'IV', 'IM', 'TOPICAL', 'INHALATION', 'OPHTHALMIC', 'NASAL']
+                        available_routes: r.available_routes && r.available_routes.length > 0
+                            ? r.available_routes
+                            : ['ORAL', 'RT', 'PEG', 'IV', 'IM', 'TOPICAL', 'INHALATION', 'OPHTHALMIC', 'NASAL'],
+                        available_drugs: r.available_drugs || [],
+                        did_you_mean: r.did_you_mean || (dymOpts[0] ? (dymOpts[0].drug_name || dymOpts[0].base_name) : null),
+                        did_you_mean_options: dymOpts
                     };
                 });
             }
 
             state.extractedRecords = mappedRecords;
             renderTable(state.extractedRecords);
+
+            // Per-row Did-You-Mean handles interactive chips directly in the table
+            hideDidYouMeanBanner();
 
             const latElem = document.getElementById('latency-telemetry-text');
             if (latElem) {
@@ -616,13 +667,16 @@ function showDidYouMeanBanner(record) {
     state.pendingDidYouMean = record;
     const banner = document.getElementById('did-you-mean-banner');
     const msg = document.getElementById('dym-message');
-    msg.innerHTML = `Medicine not found in database. Did you mean <strong>${escapeHtml(record.did_you_mean)}</strong>?`;
-    banner.classList.remove('hidden');
+    if (banner && msg) {
+        msg.innerHTML = `Pronunciation or spelling variance spotted. Did you mean <strong>${escapeHtml(record.did_you_mean)}</strong>?`;
+        banner.classList.remove('hidden');
+    }
 }
 
 function hideDidYouMeanBanner() {
     state.pendingDidYouMean = null;
-    document.getElementById('did-you-mean-banner').classList.add('hidden');
+    const banner = document.getElementById('did-you-mean-banner');
+    if (banner) banner.classList.add('hidden');
 }
 
 function acceptDidYouMean() {
@@ -630,31 +684,140 @@ function acceptDidYouMean() {
     const rec = state.pendingDidYouMean;
     const suggested = rec.did_you_mean;
 
-    // Look up variants for the suggested drug
-    const variants = searchDrugs(suggested, 20);
-    if (variants.length > 0) {
-        const best = variants[0];
-        rec.drug_id = best.drug_id;
-        rec.Drug_name = best.drug_name;
-        rec.available_drugs = variants;
-        rec.available_routes = getRoutesForDrug(best.drug_id, best.drug_type);
-        rec.route = rec.available_routes[0] || 'ORAL';
-    } else {
-        rec.Drug_name = suggested;
-    }
-
+    rec.Drug_name = suggested;
     rec.did_you_mean = null;
     hideDidYouMeanBanner();
 
-    // Now append confirmed drug to the prescription table
-    state.extractedRecords.push(rec);
     renderTable(state.extractedRecords);
-    showToast(`Added ${suggested} to prescription.`);
+    showToast(`Updated to ${suggested} in prescription.`);
 }
 
 function rejectDidYouMean() {
+    if (state.pendingDidYouMean) {
+        state.pendingDidYouMean.did_you_mean = null;
+    }
     hideDidYouMeanBanner();
+    renderTable(state.extractedRecords);
     showToast('Suggestion dismissed.');
+}
+
+/**
+ * Accept a specific Did-You-Mean suggestion for row rowIndex, option optIndex
+ */
+window.onAcceptRowDym = function(rowIndex, optIndex) {
+    const r = state.extractedRecords[rowIndex];
+    if (!r) return;
+
+    let opt = null;
+    if (Array.isArray(r.did_you_mean_options) && r.did_you_mean_options[optIndex]) {
+        opt = r.did_you_mean_options[optIndex];
+    } else if (r.did_you_mean) {
+        opt = { drug_name: r.did_you_mean, base_name: r.did_you_mean };
+    }
+    if (!opt) return;
+
+    // 1. Accepted drug name replaces the row's drug name
+    const chosenName = opt.drug_name || opt.base_name;
+    r.Drug_name = chosenName;
+
+    // 2. If option has dosage details (e.g. from combination dose), update dose and dose_unit
+    if (opt.dose !== undefined && opt.dose !== null && String(opt.dose).trim() !== '') {
+        r.dose = String(opt.dose);
+    }
+    if (opt.dose_unit) {
+        r.dose_unit = opt.dose_unit;
+    }
+
+    // 3. Update routes and available drugs if present
+    if (Array.isArray(opt.available_routes) && opt.available_routes.length > 0) {
+        r.available_routes = opt.available_routes;
+    }
+    if (Array.isArray(opt.available_drugs) && opt.available_drugs.length > 0) {
+        r.available_drugs = opt.available_drugs;
+    }
+
+    // 4. "if one pressed yes.. all did you means gone and yes one retained.."
+    r.did_you_mean_options = [];
+    r.did_you_mean = null;
+
+    if (state.pendingDidYouMean === r) {
+        hideDidYouMeanBanner();
+    }
+
+    renderTable(state.extractedRecords);
+    showToast(`Accepted recommendation: ${chosenName}`);
+};
+
+/**
+ * Reject a specific Did-You-Mean suggestion for row rowIndex, option optIndex
+ */
+window.onRejectRowDymOption = function(rowIndex, optIndex) {
+    const r = state.extractedRecords[rowIndex];
+    if (!r) return;
+
+    if (Array.isArray(r.did_you_mean_options) && r.did_you_mean_options.length > 0) {
+        // "pressing no on the did you mean option of one .. will only delete the did you mean recommendation, other 2 will remain"
+        r.did_you_mean_options.splice(optIndex, 1);
+
+        // "if all prrssed no then medicine row deleted"
+        if (r.did_you_mean_options.length === 0) {
+            state.extractedRecords.splice(rowIndex, 1);
+            if (state.pendingDidYouMean === r) {
+                hideDidYouMeanBanner();
+            }
+            renderTable(state.extractedRecords);
+            showToast('All suggestions rejected — medicine row removed.');
+            return;
+        }
+
+        r.did_you_mean = r.did_you_mean_options[0].drug_name || r.did_you_mean_options[0].base_name;
+    } else {
+        // Single option fallback
+        r.did_you_mean = null;
+        state.extractedRecords.splice(rowIndex, 1);
+        if (state.pendingDidYouMean === r) {
+            hideDidYouMeanBanner();
+        }
+        renderTable(state.extractedRecords);
+        showToast('Suggestion rejected — medicine row removed.');
+        return;
+    }
+
+    renderTable(state.extractedRecords);
+    showToast('Recommendation dismissed.');
+};
+
+function normalizeSchedule(sch) {
+    if (!sch) return '';
+    const s = String(sch).toLowerCase().trim();
+    if (s.includes('1-0-0') || s.includes('100') || s.includes('once daily') || s.includes('once a day') || s === 'od') {
+        return 'Once a day (1-0-0)';
+    }
+    if (s.includes('1-0-1') || s.includes('101') || s.includes('twice daily') || s.includes('twice a day') || s === 'bd' || s === 'bid') {
+        return 'Twice a day (1-0-1)';
+    }
+    if (s.includes('1-1-1') || s.includes('111') || s.includes('thrice daily') || s.includes('three times') || s === 'tds' || s === 'tid') {
+        return 'Thrice a day (1-1-1)';
+    }
+    if (s.includes('1-1-1-1') || s.includes('1111') || s.includes('four times') || s === 'qid') {
+        return 'Four times a day (1-1-1-1)';
+    }
+    if (s.includes('0-0-1') || s.includes('bedtime') || s.includes('night') || s.includes('hs')) {
+        return 'Once a day (bedtime)';
+    }
+    if (s.includes('1-1-0') || s.includes('110')) {
+        return 'Twice a day (1-1-0)';
+    }
+    if (s.includes('0-1-1') || s.includes('011')) {
+        return 'Twice a day (0-1-1)';
+    }
+    if (s.includes('sos') || s.includes('as needed') || s.includes('if required')) {
+        return 'If Required (SOS)';
+    }
+    if (s.includes('stat') || s.includes('immediate')) {
+        return 'Stat (Immediate single dose only)';
+    }
+    return sch;
 }
 
 /**
@@ -677,23 +840,44 @@ function renderTable(records) {
         const drugName = r.Drug_name || '';
         const dose = (r.dose !== undefined && r.dose !== null) ? r.dose : '';
         const doseUnit = dose ? (r.dose_unit || 'mg') : (r.dose_unit || '');
-        const schedule = r.schedule || '';
+        const rawSchedule = r.schedule || '';
+        const schedule = normalizeSchedule(rawSchedule);
+        const standardSchedules = [
+            'Twice a day (1-0-1)',
+            'Once a day (1-0-0)',
+            'Thrice a day (1-1-1)',
+            'Four times a day (1-1-1-1)',
+            'Once a day (bedtime)',
+            'Once a day (0-1-0)',
+            'Twice a day (1-1-0)',
+            'Twice a day (0-1-1)',
+            'If Required (SOS)',
+            'Stat (Immediate single dose only)'
+        ];
+        const allSchedules = (!schedule || standardSchedules.includes(schedule))
+            ? standardSchedules
+            : [schedule, ...standardSchedules];
+
         const route = (r.route || 'ORAL').toUpperCase();
         const instruction = (r.instruction && r.instruction !== 'NONE') ? r.instruction : '';
         const days = r.days || '';
 
         const variants = r.available_drugs || [];
-        const routes = r.available_routes || getRoutesForDrug(r.drug_id) || ['ORAL', 'RT', 'PEG', 'IV', 'IM'];
-        const uniqueRoutes = Array.from(new Set([route, ...routes])).filter(Boolean);
+        const isMatchedInVariants = variants.some(v => v.drug_name === drugName || v.base_name === drugName);
+        const routes = (r.available_routes && r.available_routes.length > 0)
+            ? r.available_routes
+            : ['ORAL', 'RT', 'PEG', 'IV', 'IM', 'TOPICAL', 'INHALATION', 'OPHTHALMIC', 'NASAL'];
+        const uniqueRoutes = Array.from(new Set([route, ...routes.map(rt => rt.toUpperCase())])).filter(Boolean);
 
         return `
             <tr data-index="${i}">
-                <!-- 1. Drug Name (Dropdown of variants or text) -->
+                <!-- 1. Drug Name (Dropdown of same-dose variants or text) -->
                 <td>
                     ${variants.length >= 1 ? `
                         <select class="table-cell-select drug-dropdown-select" onchange="onSelectDrugVariant(${i}, this.value)">
+                            ${!isMatchedInVariants ? `<option value="" selected>${escapeHtml(drugName)}</option>` : ''}
                             ${variants.map(v => `
-                                <option value="${v.drug_id}" ${v.drug_name === drugName ? 'selected' : ''}>
+                                <option value="${v.drug_id}" ${(v.drug_name === drugName || (isMatchedInVariants && v.base_name === drugName)) ? 'selected' : ''}>
                                     ${escapeHtml(v.drug_name)}
                                 </option>
                             `).join('')}
@@ -701,6 +885,35 @@ function renderTable(records) {
                     ` : `
                         <input type="text" class="table-cell-input drug-name-cell" value="${escapeHtml(drugName)}" onchange="updateRecord(${i}, 'Drug_name', this.value)" placeholder="Drug Name">
                     `}
+                    ${(r.did_you_mean_options && r.did_you_mean_options.length > 0) ? `
+                        <div class="row-dym-container" id="row-dym-${i}">
+                            <div class="row-dym-title">❓ Did you mean:</div>
+                            <div class="row-dym-chips">
+                                ${r.did_you_mean_options.slice(0, 3).map((opt, optIdx) => `
+                                    <div class="row-dym-chip" id="row-dym-${i}-chip-${optIdx}">
+                                        <span class="row-dym-name" title="${escapeHtml(opt.drug_name || opt.base_name)}">${escapeHtml(opt.drug_name || opt.base_name)}</span>
+                                        <div class="row-dym-actions">
+                                            <button type="button" class="btn-dym-opt-yes" onclick="onAcceptRowDym(${i}, ${optIdx})" title="Accept recommendation">✓ Yes</button>
+                                            <button type="button" class="btn-dym-opt-no" onclick="onRejectRowDymOption(${i}, ${optIdx})" title="Reject recommendation">✗ No</button>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : (r.did_you_mean ? `
+                        <div class="row-dym-container" id="row-dym-${i}">
+                            <div class="row-dym-title">❓ Did you mean:</div>
+                            <div class="row-dym-chips">
+                                <div class="row-dym-chip" id="row-dym-${i}-chip-0">
+                                    <span class="row-dym-name" title="${escapeHtml(r.did_you_mean)}">${escapeHtml(r.did_you_mean)}</span>
+                                    <div class="row-dym-actions">
+                                        <button type="button" class="btn-dym-opt-yes" onclick="onAcceptRowDym(${i}, 0)" title="Accept recommendation">✓ Yes</button>
+                                        <button type="button" class="btn-dym-opt-no" onclick="onRejectRowDymOption(${i}, 0)" title="Reject recommendation">✗ No</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ` : '')}
                 </td>
 
                 <!-- 2. Dose -->
@@ -722,19 +935,8 @@ function renderTable(records) {
                 <td style="min-width: 175px;">
                     <select class="table-cell-select schedule-dropdown-select" onchange="updateRecord(${i}, 'schedule', this.value)">
                         <option value="" ${!schedule ? 'selected' : ''}>-- Select Schedule --</option>
-                        ${[
-                            'Twice a day (1-0-1)',
-                            'Once a day (1-0-0)',
-                            'Thrice a day (1-1-1)',
-                            'Four times a day (1-1-1-1)',
-                            'Once a day (bedtime)',
-                            'Once a day (0-1-0)',
-                            'Twice a day (1-1-0)',
-                            'Twice a day (0-1-1)',
-                            'If Required (SOS)',
-                            'Stat (Immediate single dose only)'
-                        ].map(s => `
-                            <option value="${s}" ${s === schedule ? 'selected' : ''}>${s}</option>
+                        ${allSchedules.map(s => `
+                            <option value="${escapeHtml(s)}" ${s === schedule ? 'selected' : ''}>${escapeHtml(s)}</option>
                         `).join('')}
                     </select>
                 </td>
@@ -782,10 +984,13 @@ function onSelectDrugVariant(index, selectedDrugId) {
         rec.drug_id = chosen.drug_id;
         rec.Drug_name = chosen.drug_name;
 
-        // Fetch mapped routes for the chosen drug from Drug_Route_mapping.csv
-        rec.available_routes = getRoutesForDrug(chosen.drug_id, chosen.drug_type);
-        rec.route = rec.available_routes[0] || 'ORAL';
-
+        // Fetch mapped routes for the chosen drug
+        if (chosen.routes && chosen.routes.length > 0) {
+            rec.available_routes = chosen.routes;
+            rec.route = chosen.routes[0].toUpperCase();
+        }
+        rec.did_you_mean = null;
+        hideDidYouMeanBanner();
         renderTable(state.extractedRecords);
     }
 }
@@ -937,6 +1142,7 @@ async function savePrescription() {
 
 function showToast(msg) {
     const toast = document.getElementById('toast');
+    if (!toast) return;
     toast.textContent = msg;
     toast.classList.remove('hidden');
     setTimeout(() => { toast.classList.add('hidden'); }, 3500);

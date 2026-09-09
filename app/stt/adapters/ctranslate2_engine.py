@@ -40,20 +40,45 @@ from app.stt.base import (
 )
 from app.stt.schemas import TranscriptionResult, TranscriptionSegment
 
-# Medical priming vocabulary
-MEDICAL_PROMPT = (
-    "Medical prescription dictation. Drug names, dosages, frequencies, routes: "
-    "Paracetamol, Ibuprofen, Aspirin, Amoxicillin, Amoxicillin-Clavulanate, Azithromycin, "
-    "Cefpodoxime, Cefixime, Cefuroxime, Ciprofloxacin, Levofloxacin, Metronidazole, "
-    "Omeprazole, Pantoprazole, Rabeprazole, Esomeprazole, Ranitidine, Domperidone, "
-    "Metformin, Glibenclamide, Glipizide, Sitagliptin, Insulin, "
-    "Atorvastatin, Rosuvastatin, Amlodipine, Enalapril, Losartan, Telmisartan, "
-    "Metoprolol, Atenolol, Furosemide, Spironolactone, "
-    "Oxymetazoline, Betamethasone, Prednisolone, Dexamethasone, "
-    "Diclofenac, Aceclofenac, Tramadol, Gabapentin, Pregabalin, "
-    "mg, mcg, ml, tablet, capsule, syrup, drops, spray, "
-    "twice daily, once daily, three times daily, after food, before food, for 5 days."
-)
+import re
+
+HALLUCINATION_PATTERNS = [
+    r"(?i)\b(thank\s+you\s+very\s+much|thank\s+you\s+for\s+watching|thanks\s+for\s+watching|thank\s+you|thanks)\b[.!]*",
+    r"(?i)\b((please\s+)?subscribe(\s+to\s+(this|my)\s+channel)?|like\s+and\s+subscribe)\b[.!]*",
+    r"(?i)\b(subtitles\s+by|subtitled\s+by|amara\.org)\b.*",
+    r"(?i)\b(goodbye|bye\s+bye|see\s+you\s+(later|next\s+time))\b[.!]*",
+    r"(?i)\b(the\s+end)\b[.!]*",
+    r"\[(?:music|applause|laughter|silence|cough|sigh|throat-clearing)\]",
+    r"\([a-z\s]+\)",
+    r"[♪♫]+",
+]
+
+
+def clean_hallucinations(text: str) -> str:
+    """Strips known Whisper phantom phrases, video subtitle artifacts, repetitive loops, and stray punctuation."""
+    if not text:
+        return ""
+    cleaned = text.strip()
+    for pattern in HALLUCINATION_PATTERNS:
+        cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE).strip()
+
+    # Collapse degenerate repeating loops (e.g. "take take take take" -> "take")
+    cleaned = re.sub(r"\b(\w+)(?:\s+\1){2,}\b", r"\1", cleaned, flags=re.IGNORECASE)
+
+    # Strip leading/trailing stray punctuation
+    cleaned = re.sub(r"^[\s,.\-!?:;\"'()\[\]{}]+", "", cleaned)
+    cleaned = re.sub(r"[\s,.\-!?:;\"'()\[\]{}]+$", "", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if not any(c.isalnum() for c in cleaned):
+        return ""
+    if cleaned.lower() in ("you", "bye", "okay", "yeah", "hello", "hi", "so", "oh", "ah", "um", "uh"):
+        return ""
+    return cleaned
+
+
+# Medical priming vocabulary (concise context hint to prevent hallucination / prompt copying)
+MEDICAL_PROMPT = "Medical prescription dictation."
+
 
 
 class CTranslate2Engine(STTEngine):
@@ -153,6 +178,16 @@ class CTranslate2Engine(STTEngine):
         t0 = time.perf_counter()
         try:
             prompt = initial_prompt or MEDICAL_PROMPT
+            vad_filter = kwargs.get("vad_filter", True)
+            vad_parameters = kwargs.get(
+                "vad_parameters",
+                dict(
+                    threshold=0.5,
+                    min_speech_duration_ms=200,
+                    min_silence_duration_ms=350,
+                    speech_pad_ms=150,
+                ),
+            )
             segments_gen, info = self._model.transcribe(
                 input_target,
                 beam_size=beam_size,
@@ -161,23 +196,30 @@ class CTranslate2Engine(STTEngine):
                 language=language,
                 initial_prompt=prompt,
                 condition_on_previous_text=False,
-                vad_filter=kwargs.get("vad_filter", True),
+                vad_filter=vad_filter,
+                vad_parameters=vad_parameters if vad_filter else None,
+                no_speech_threshold=kwargs.get("no_speech_threshold", 0.6),
+                log_prob_threshold=kwargs.get("log_prob_threshold", -1.0),
+                compression_ratio_threshold=kwargs.get("compression_ratio_threshold", 2.4),
+                hallucination_silence_threshold=kwargs.get("hallucination_silence_threshold", 2.0),
             )
 
             segments: List[TranscriptionSegment] = []
             text_parts = []
             for s in segments_gen:
-                text_parts.append(s.text)
-                segments.append(
-                    TranscriptionSegment(
-                        text=s.text.strip(),
-                        start=round(s.start, 2),
-                        end=round(s.end, 2),
-                        confidence=round(getattr(s, "avg_logprob", 0.0), 3),
+                seg_cleaned = clean_hallucinations(s.text)
+                if seg_cleaned:
+                    text_parts.append(seg_cleaned)
+                    segments.append(
+                        TranscriptionSegment(
+                            text=seg_cleaned,
+                            start=round(s.start, 2),
+                            end=round(s.end, 2),
+                            confidence=round(getattr(s, "avg_logprob", 0.0), 3),
+                        )
                     )
-                )
 
-            full_text = " ".join(text_parts).strip()
+            full_text = clean_hallucinations(" ".join(text_parts))
             latency = time.perf_counter() - t0
 
             return TranscriptionResult(

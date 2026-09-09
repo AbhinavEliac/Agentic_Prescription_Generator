@@ -157,24 +157,44 @@ def extract_instructions(
                 if len(adv) > 5 and not any(adv.lower() in ai.lower() for ai in additional_items):
                     additional_items.append(adv)
 
-    # 4. Check full text for global advice that belongs to all/companion medications (e.g. lifestyle, diet)
+    # 4. Check for explicit global broadcast advice only (e.g. 'both medicines', 'all medicines')
     if full_prescription_text:
-        for pat in (
-            r"(?i)\binclude\s+(?:dark\s+)?green\s+leafy\s+vegetables[^\.\n;!]*",
-            r"(?i)\bavoid\s+tea\s+near\s+meal\s+times\b",
-            r"(?i)\b(?:go\s+for\s+)?morning\s+walks?\s+daily\b",
-            r"(?i)\bre-?test\s+blood\s+count\s+in\s+\d+\s+months?\b",
-            r"(?i)\bstick\s+to\s+a\s+bland\s+diet[^\.\n;!]*",
-            r"(?i)\bvisit\s+the\s+emergency(?:\s+room)?\s+immediately[^\.\n;!]*",
-        ):
-            m = re.search(pat, full_prescription_text)
-            if m:
-                val = m.group(0).strip()
-                if val not in additional_items:
-                    additional_items.append(val)
+        broadcast_match = re.search(
+            r"(?i)\b(?:both(?:\s+of\s+them|\s+medicines|\s+drugs|\s+tablets|\s+capsules)?|"
+            r"all(?:\s+the)?\s+medicines|all(?:\s+these|\s+of\s+them)?(?:\s+medicines|\s+drugs|\s+tablets)?)\s+[^,\.\n;!]+",
+            full_prescription_text,
+        )
+        if broadcast_match:
+            b_text = broadcast_match.group(0).strip()
+            for pat, canonical_label in PRIMARY_PATTERNS:
+                m = re.search(pat, b_text)
+                if m:
+                    val = canonical_label if canonical_label else m.group(0).strip()
+                    if val not in primary_items:
+                        primary_items.append(val)
 
-    # Format result strings
-    primary_res = "; ".join(dict.fromkeys(primary_items)) if primary_items else None
-    additional_res = "; ".join(dict.fromkeys(additional_items)) if additional_items else None
+        if not additional_items:
+            for pat in ADDITIONAL_PATTERNS:
+                m = re.search(pat, full_prescription_text)
+                if m:
+                    val = m.group(0).strip()
+                    if val not in additional_items:
+                        additional_items.append(val)
+
+    # Clean duplicates and subset redundancies (e.g. 'with meals' when 'strictly with meals' is present)
+    def _prune_subsets(items: List[str]) -> List[str]:
+        deduped = list(dict.fromkeys(items))
+        filtered = []
+        for it in deduped:
+            # If a more specific version already exists, skip the shorter subset
+            if not any(it != other and it.lower() in other.lower() for other in deduped):
+                filtered.append(it)
+        return filtered if filtered else deduped
+
+    pruned_primary = _prune_subsets(primary_items)
+    pruned_additional = _prune_subsets(additional_items)
+
+    primary_res = "; ".join(pruned_primary) if pruned_primary else None
+    additional_res = "; ".join(pruned_additional) if pruned_additional else None
 
     return primary_res, additional_res, 0.90

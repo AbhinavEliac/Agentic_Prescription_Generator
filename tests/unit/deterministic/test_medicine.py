@@ -44,19 +44,43 @@ def test_clean_candidate_name():
 
 
 def test_extract_medicine_with_seed(drug_repo):
-    med, span, conf = extract_medicine_candidate(
+    med, span, conf, dym, did, dym_opts = extract_medicine_candidate(
         "Take one tablet of Paracetamol 650 mg",
         seed_drug_name="Paracetamol",
         drug_repo=drug_repo,
     )
-    assert med == "Paracetamol"
+    assert med.upper() == "PARACETAMOL"
     assert conf >= 0.90
+    assert dym is None
 
 
 def test_extract_medicine_from_clause(drug_repo):
-    med, span, conf = extract_medicine_candidate(
+    med, span, conf, dym, did, dym_opts = extract_medicine_candidate(
         "Take Pantop 40 mg once daily before breakfast",
         drug_repo=drug_repo,
     )
     assert "Pantop" in med or "PANTOP" in med.upper()
     assert conf >= 0.85
+
+
+def test_extract_medicine_did_you_mean_top_3(drug_repo):
+    # Misspelled "Grocin" should match Crocin with up to 3 Did-You-Mean options
+    med, span, conf, dym, did, dym_opts = extract_medicine_candidate(
+        "Take Grocin 650 mg 1-0-1 for 3 days",
+        drug_repo=drug_repo,
+    )
+    assert dym is not None
+    assert "crocin" in dym.lower() or "crocin" in med.lower()
+    assert len(dym_opts) >= 1
+    assert len(dym_opts) <= 3
+
+
+def test_extract_medicine_not_found(drug_repo):
+    # Completely unknown token without matching in Drug_database
+    med, span, conf, dym, did, dym_opts = extract_medicine_candidate(
+        "Take Zzyyxxqqwwee 500 mg once daily for 5 days",
+        drug_repo=drug_repo,
+    )
+    assert med == "Medicine not found"
+    assert dym is None
+    assert len(dym_opts) == 0
